@@ -120,7 +120,7 @@ class _BodyState extends State<Body> {
     await fetchJadwal();
   }
 
-  // Convert jadwal data ke format yang dibutuhkan AddModal
+  // Convert jadwal data ke format yang dibutuhkan AddModal dan EditModal
   Map<String, List<Map<String, dynamic>>> _convertJadwalForModal() {
     Map<String, List<Map<String, dynamic>>> converted = {};
 
@@ -180,6 +180,8 @@ class _BodyState extends State<Body> {
       );
     }
 
+    final existingSchedules = _convertJadwalForModal();
+
     return Stack(
       children: [
         Container(
@@ -193,6 +195,7 @@ class _BodyState extends State<Body> {
                   title: entry.key,
                   pelajaran: entry.value,
                   onScheduleChanged: _refreshData, // Teruskan callback
+                  existingSchedules: existingSchedules,
                 );
               }).toList(),
             ),
@@ -203,7 +206,7 @@ class _BodyState extends State<Body> {
           right: 16,
           child: AddButton(
             onScheduleAdded: _refreshData, // Gunakan callback yang sama
-            existingSchedules: _convertJadwalForModal(),
+            existingSchedules: existingSchedules,
           ),
         ),
       ],

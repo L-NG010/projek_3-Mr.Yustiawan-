@@ -7,12 +7,14 @@ class HariCard extends StatefulWidget {
   final String title;
   final List<Pelajaran> pelajaran;
   final VoidCallback? onScheduleChanged; // Callback untuk refresh data
+  final Map<String, List<Map<String, dynamic>>> existingSchedules;
 
   const HariCard({
     Key? key,
     required this.title,
     required this.pelajaran,
     this.onScheduleChanged,
+    required this.existingSchedules,
   }) : super(key: key);
 
   @override
@@ -34,6 +36,7 @@ class _HariCardState extends State<HariCard> with TickerProviderStateMixin {
           pelajaran: pelajaran,
           hari: widget.title,
           onScheduleUpdated: widget.onScheduleChanged,
+          existingSchedules: widget.existingSchedules,
         ),
       ),
     );
