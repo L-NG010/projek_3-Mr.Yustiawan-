@@ -119,6 +119,29 @@ class _BodyState extends State<Body> {
     await fetchJadwal();
   }
 
+  // Fungsi callback untuk refresh data setelah menambah jadwal baru
+  void _onScheduleAdded() {
+    fetchJadwal(); // Refresh data tanpa loading indicator
+  }
+
+  // Convert jadwal data ke format yang dibutuhkan AddModal
+  Map<String, List<Map<String, dynamic>>> _convertJadwalForModal() {
+    Map<String, List<Map<String, dynamic>>> converted = {};
+    
+    jadwal.forEach((hari, pelajaranList) {
+      converted[hari] = pelajaranList.map((pelajaran) {
+        // Extract jam mulai dan jam akhir dari string "08:00 - 09:30"
+        final jamParts = pelajaran.jam.split(' - ');
+        return {
+          'jamMulai': jamParts.isNotEmpty ? jamParts[0] : '00:00',
+          'jamBerakhir': jamParts.length > 1 ? jamParts[1] : '00:00',
+        };
+      }).toList();
+    });
+    
+    return converted;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
@@ -179,10 +202,13 @@ class _BodyState extends State<Body> {
             ),
           ),
         ),
-        const Positioned(
+        Positioned(
           bottom: 16,
           right: 16,
-          child: AddButton(),
+          child: AddButton(
+            onScheduleAdded: _onScheduleAdded, // Pass callback ke AddButton
+            existingSchedules: _convertJadwalForModal(), // Pass data jadwal untuk conflict detection
+          ),
         ),
       ],
     );

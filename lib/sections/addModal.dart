@@ -6,7 +6,7 @@ class AddModal extends StatefulWidget {
   final VoidCallback? onScheduleAdded; // Callback untuk refresh data
 
   const AddModal({
-    super.key, 
+    super.key,
     required this.existingSchedules,
     this.onScheduleAdded,
   });
@@ -84,48 +84,33 @@ class _AddModalState extends State<AddModal> {
   }
 
   Future<void> _saveToDatabase() async {
-    try {
-      final supabase = DatabaseConfig.client;
+  try {
+    final supabase = DatabaseConfig.client;
+    
+    final data = {
+      'hari': selectedHari!,
+      'nama': namaController.text.trim(),
+      'jam_awal': jamMulaiController.text.trim(),
+      'jam_akhir': jamBerakhirController.text.trim(),
+      'code_warna': _colorToHex(selectedColor),
+    };
+
+    final response = await supabase.from('jadwal').insert(data).select();
+
+    if (response.isNotEmpty) {
+      // Panggil callback refresh jika ada
+      widget.onScheduleAdded?.call();
       
-      final data = {
-        'hari': selectedHari!,
-        'nama': namaController.text.trim(),
-        'jam_awal': jamMulaiController.text.trim(),
-        'jam_akhir': jamBerakhirController.text.trim(),
-        'code_warna': _colorToHex(selectedColor),
-      };
-
-      final response = await supabase
-          .from('jadwal')
-          .insert(data)
-          .select();
-
-      if (response.isNotEmpty) {
-        // Berhasil disimpan
-        if (widget.onScheduleAdded != null) {
-          widget.onScheduleAdded!();
-        }
-        
-        Navigator.pop(context, true); // Return true untuk menandakan berhasil
-        
-        // Tampilkan snackbar sukses
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Jadwal ${namaController.text} berhasil ditambahkan'),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      setState(() {
-        errorMessage = 'Gagal menyimpan ke database: $e';
-        isLoading = false;
-      });
+      // Tutup dialog
+      if (mounted) Navigator.pop(context);
     }
+  } catch (e) {
+    setState(() {
+      errorMessage = 'Gagal menyimpan: $e';
+      isLoading = false;
+    });
   }
+}
 
   Future<void> _handleSave() async {
     setState(() {
@@ -367,7 +352,9 @@ class _AddModalState extends State<AddModal> {
           decoration: BoxDecoration(
             border: Border.all(color: const Color(0xFFE5E7EB)),
             borderRadius: BorderRadius.circular(12),
-            color: isLoading ? const Color(0xFFF3F4F6) : const Color(0xFFF9FAFB),
+            color: isLoading
+                ? const Color(0xFFF3F4F6)
+                : const Color(0xFFF9FAFB),
           ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
@@ -377,7 +364,9 @@ class _AddModalState extends State<AddModal> {
                 style: TextStyle(color: Color(0xFF9CA3AF)),
               ),
               isExpanded: true,
-              onChanged: isLoading ? null : (value) => setState(() => selectedHari = value),
+              onChanged: isLoading
+                  ? null
+                  : (value) => setState(() => selectedHari = value),
               items: hariList.map((hari) {
                 return DropdownMenuItem(
                   value: hari,
@@ -431,7 +420,9 @@ class _AddModalState extends State<AddModal> {
               contentPadding: const EdgeInsets.all(16),
             ),
             style: TextStyle(
-              color: enabled ? const Color(0xFF374151) : const Color(0xFF9CA3AF),
+              color: enabled
+                  ? const Color(0xFF374151)
+                  : const Color(0xFF9CA3AF),
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -458,7 +449,9 @@ class _AddModalState extends State<AddModal> {
           decoration: BoxDecoration(
             border: Border.all(color: const Color(0xFFE5E7EB)),
             borderRadius: BorderRadius.circular(12),
-            color: isLoading ? const Color(0xFFF3F4F6) : const Color(0xFFF9FAFB),
+            color: isLoading
+                ? const Color(0xFFF3F4F6)
+                : const Color(0xFFF9FAFB),
           ),
           child: Column(
             children: [
@@ -510,9 +503,13 @@ class _AddModalState extends State<AddModal> {
                   final isSelected = selectedColor == color;
 
                   return MouseRegion(
-                    cursor: isLoading ? SystemMouseCursors.forbidden : SystemMouseCursors.click,
+                    cursor: isLoading
+                        ? SystemMouseCursors.forbidden
+                        : SystemMouseCursors.click,
                     child: GestureDetector(
-                      onTap: isLoading ? null : () => setState(() => selectedColor = color),
+                      onTap: isLoading
+                          ? null
+                          : () => setState(() => selectedColor = color),
                       child: Container(
                         decoration: BoxDecoration(
                           color: color,
