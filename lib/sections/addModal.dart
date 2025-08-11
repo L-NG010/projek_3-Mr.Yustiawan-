@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
+import '/connect.dart'; // Import database config
 
 class AddModal extends StatefulWidget {
   final Map<String, List<Map<String, dynamic>>> existingSchedules;
+  final VoidCallback? onScheduleAdded; // Callback untuk refresh data
 
-  const AddModal({super.key, required this.existingSchedules});
+  const AddModal({
+    super.key, 
+    required this.existingSchedules,
+    this.onScheduleAdded,
+  });
 
   @override
   State<AddModal> createState() => _AddModalState();
@@ -16,6 +22,7 @@ class _AddModalState extends State<AddModal> {
   final TextEditingController jamBerakhirController = TextEditingController();
   Color selectedColor = const Color(0xFF6366F1);
   String? errorMessage;
+  bool isLoading = false;
 
   final List<String> hariList = [
     'Senin',
@@ -72,21 +79,109 @@ class _AddModalState extends State<AddModal> {
     return false;
   }
 
-  void _handleSave() {
-    setState(() => errorMessage = null);
+  String _colorToHex(Color color) {
+    return '#${color.value.toRadixString(16).substring(2).toUpperCase()}';
+  }
 
+  Future<void> _saveToDatabase() async {
+    try {
+      final supabase = DatabaseConfig.client;
+      
+      final data = {
+        'hari': selectedHari!,
+        'nama': namaController.text.trim(),
+        'jam_awal': jamMulaiController.text.trim(),
+        'jam_akhir': jamBerakhirController.text.trim(),
+        'code_warna': _colorToHex(selectedColor),
+      };
+
+      final response = await supabase
+          .from('jadwal')
+          .insert(data)
+          .select();
+
+      if (response.isNotEmpty) {
+        // Berhasil disimpan
+        if (widget.onScheduleAdded != null) {
+          widget.onScheduleAdded!();
+        }
+        
+        Navigator.pop(context, true); // Return true untuk menandakan berhasil
+        
+        // Tampilkan snackbar sukses
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Jadwal ${namaController.text} berhasil ditambahkan'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Gagal menyimpan ke database: $e';
+        isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _handleSave() async {
+    setState(() {
+      errorMessage = null;
+      isLoading = true;
+    });
+
+    // Validasi hari
     if (selectedHari == null) {
-      setState(() => errorMessage = 'Pilih hari terlebih dahulu');
+      setState(() {
+        errorMessage = 'Pilih hari terlebih dahulu';
+        isLoading = false;
+      });
+      return;
+    }
+
+    // Validasi nama pelajaran
+    if (namaController.text.trim().isEmpty) {
+      setState(() {
+        errorMessage = 'Nama pelajaran tidak boleh kosong';
+        isLoading = false;
+      });
+      return;
+    }
+
+    // Validasi jam mulai
+    if (jamMulaiController.text.trim().isEmpty) {
+      setState(() {
+        errorMessage = 'Jam mulai tidak boleh kosong';
+        isLoading = false;
+      });
       return;
     }
 
     if (!_validateTimeFormat(jamMulaiController.text)) {
-      setState(() => errorMessage = 'Format jam mulai tidak valid (HH:mm)');
+      setState(() {
+        errorMessage = 'Format jam mulai tidak valid (HH:mm)';
+        isLoading = false;
+      });
+      return;
+    }
+
+    // Validasi jam berakhir
+    if (jamBerakhirController.text.trim().isEmpty) {
+      setState(() {
+        errorMessage = 'Jam berakhir tidak boleh kosong';
+        isLoading = false;
+      });
       return;
     }
 
     if (!_validateTimeFormat(jamBerakhirController.text)) {
-      setState(() => errorMessage = 'Format jam berakhir tidak valid (HH:mm)');
+      setState(() {
+        errorMessage = 'Format jam berakhir tidak valid (HH:mm)';
+        isLoading = false;
+      });
       return;
     }
 
@@ -94,24 +189,31 @@ class _AddModalState extends State<AddModal> {
     final endTime = _parseTime(jamBerakhirController.text);
 
     if (endTime.isBefore(startTime)) {
-      setState(() => errorMessage = 'Jam berakhir harus setelah jam mulai');
+      setState(() {
+        errorMessage = 'Jam berakhir harus setelah jam mulai';
+        isLoading = false;
+      });
       return;
     }
 
     if (_checkScheduleConflict()) {
-      setState(
-        () => errorMessage = 'Sudah ada jadwal di hari dan waktu yang sama',
-      );
+      setState(() {
+        errorMessage = 'Sudah ada jadwal di hari dan waktu yang sama';
+        isLoading = false;
+      });
       return;
     }
 
-    Navigator.pop(context, {
-      'hari': selectedHari,
-      'nama': namaController.text,
-      'jamMulai': jamMulaiController.text,
-      'jamBerakhir': jamBerakhirController.text,
-      'color': selectedColor.value,
-    });
+    // Simpan ke database
+    await _saveToDatabase();
+  }
+
+  @override
+  void dispose() {
+    namaController.dispose();
+    jamMulaiController.dispose();
+    jamBerakhirController.dispose();
+    super.dispose();
   }
 
   @override
@@ -176,9 +278,10 @@ class _AddModalState extends State<AddModal> {
               const SizedBox(height: 16),
 
               _buildTextFieldWithLabel(
-                label: 'Nama Pelajaran',
+                label: 'Nama Pelajaran *',
                 controller: namaController,
                 hint: 'Masukkan nama pelajaran',
+                enabled: !isLoading,
               ),
               const SizedBox(height: 16),
 
@@ -186,17 +289,19 @@ class _AddModalState extends State<AddModal> {
                 children: [
                   Expanded(
                     child: _buildTextFieldWithLabel(
-                      label: 'Jam Mulai',
+                      label: 'Jam Mulai *',
                       controller: jamMulaiController,
                       hint: '08:00',
+                      enabled: !isLoading,
                     ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
                     child: _buildTextFieldWithLabel(
-                      label: 'Jam Berakhir',
+                      label: 'Jam Berakhir *',
                       controller: jamBerakhirController,
                       hint: '09:30',
+                      enabled: !isLoading,
                     ),
                   ),
                 ],
@@ -249,7 +354,7 @@ class _AddModalState extends State<AddModal> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Hari',
+          'Hari *',
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
@@ -262,7 +367,7 @@ class _AddModalState extends State<AddModal> {
           decoration: BoxDecoration(
             border: Border.all(color: const Color(0xFFE5E7EB)),
             borderRadius: BorderRadius.circular(12),
-            color: const Color(0xFFF9FAFB),
+            color: isLoading ? const Color(0xFFF3F4F6) : const Color(0xFFF9FAFB),
           ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
@@ -272,6 +377,7 @@ class _AddModalState extends State<AddModal> {
                 style: TextStyle(color: Color(0xFF9CA3AF)),
               ),
               isExpanded: true,
+              onChanged: isLoading ? null : (value) => setState(() => selectedHari = value),
               items: hariList.map((hari) {
                 return DropdownMenuItem(
                   value: hari,
@@ -284,7 +390,6 @@ class _AddModalState extends State<AddModal> {
                   ),
                 );
               }).toList(),
-              onChanged: (value) => setState(() => selectedHari = value),
             ),
           ),
         ),
@@ -296,6 +401,7 @@ class _AddModalState extends State<AddModal> {
     required String label,
     required TextEditingController controller,
     required String hint,
+    bool enabled = true,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -313,18 +419,19 @@ class _AddModalState extends State<AddModal> {
           decoration: BoxDecoration(
             border: Border.all(color: const Color(0xFFE5E7EB)),
             borderRadius: BorderRadius.circular(12),
-            color: const Color(0xFFF9FAFB),
+            color: enabled ? const Color(0xFFF9FAFB) : const Color(0xFFF3F4F6),
           ),
           child: TextField(
             controller: controller,
+            enabled: enabled,
             decoration: InputDecoration(
               hintText: hint,
               hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
               border: InputBorder.none,
               contentPadding: const EdgeInsets.all(16),
             ),
-            style: const TextStyle(
-              color: Color(0xFF374151),
+            style: TextStyle(
+              color: enabled ? const Color(0xFF374151) : const Color(0xFF9CA3AF),
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -351,7 +458,7 @@ class _AddModalState extends State<AddModal> {
           decoration: BoxDecoration(
             border: Border.all(color: const Color(0xFFE5E7EB)),
             borderRadius: BorderRadius.circular(12),
-            color: const Color(0xFFF9FAFB),
+            color: isLoading ? const Color(0xFFF3F4F6) : const Color(0xFFF9FAFB),
           ),
           child: Column(
             children: [
@@ -403,9 +510,9 @@ class _AddModalState extends State<AddModal> {
                   final isSelected = selectedColor == color;
 
                   return MouseRegion(
-                    cursor: SystemMouseCursors.click,
+                    cursor: isLoading ? SystemMouseCursors.forbidden : SystemMouseCursors.click,
                     child: GestureDetector(
-                      onTap: () => setState(() => selectedColor = color),
+                      onTap: isLoading ? null : () => setState(() => selectedColor = color),
                       child: Container(
                         decoration: BoxDecoration(
                           color: color,
@@ -448,7 +555,7 @@ class _AddModalState extends State<AddModal> {
       children: [
         Expanded(
           child: OutlinedButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: isLoading ? null : () => Navigator.pop(context),
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14),
               side: const BorderSide(color: Color(0xFFE5E7EB)),
@@ -468,7 +575,7 @@ class _AddModalState extends State<AddModal> {
         const SizedBox(width: 12),
         Expanded(
           child: ElevatedButton(
-            onPressed: _handleSave,
+            onPressed: isLoading ? null : _handleSave,
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF4A4877),
               foregroundColor: Colors.white,
@@ -478,10 +585,19 @@ class _AddModalState extends State<AddModal> {
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text(
-              'Simpan',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
+            child: isLoading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Text(
+                    'Simpan',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
           ),
         ),
       ],

@@ -1,55 +1,148 @@
-// body.dart (UI only)
+// body.dart (UI with database integration)
 import 'package:flutter/material.dart';
 import '../components/card.dart';
 import '../model/pelajaran.dart';
 import '../components/addButton.dart';
+import '../connect.dart'; // Import database config
 
-class Body extends StatelessWidget {
+class Body extends StatefulWidget {
   const Body({super.key});
 
-  final Map<String, List<Pelajaran>> jadwal = const {
-    'Senin': [
-      Pelajaran(nama: 'BKK', jam: '07:10 - 08:50', warna: Color(0xFF51C6EB)),
-      Pelajaran(nama: 'BING', jam: '08:50 - 10:20', warna: Color(0xFFF29629)),
-      Pelajaran(nama: 'KRPL', jam: '11:00 - 13:20', warna: Color(0xFFFA9C8F)),
-    ],
-    'Selasa': [
-      Pelajaran(nama: 'KRPL 4', jam: '06:30 - 11:00', warna: Color(0xFFFF9A8B)),
-      Pelajaran(nama: 'BJ', jam: '11:00 - 12:20', warna: Color(0xFF4CC9F0)),
-      Pelajaran(nama: 'BING', jam: '13:00 - 14:20', warna: Color(0xFFF8961E)),
-    ],
-    'Rabu': [
-      Pelajaran(nama: 'KRPL 4', jam: '06:30 - 11:00', warna: Color(0xFFFF9A8B)),
-      Pelajaran(nama: 'MPG', jam: '11:00 - 14:20', warna: Color(0xFFFF9A8B)),
-    ],
-    'Kamis': [
-      Pelajaran(nama: 'PKDK', jam: '06:30 - 10:20', warna: Color(0xFFDA70D6)),
-      Pelajaran(nama: 'PP', jam: '10:20 - 11:40', warna: Color(0xFF7209B7)),
-      Pelajaran(nama: 'PAI', jam: '11:40 - 14:20', warna: Color(0xFF0096FF)),
-    ],
-    'Jumat': [
-      Pelajaran(nama: 'KRPL 4', jam: '06:30 - 11:00', warna: Color(0xFFFF9A8B)),
-    ],
-    'Sabtu': [
-      Pelajaran(nama: 'MTK', jam: '06:30 - 08:30', warna: Color(0xFF90EE90)),
-      Pelajaran(nama: 'BIN', jam: '08:30 - 11:00', warna: Color(0xFF006400)),
-    ],
-  };
+  @override
+  State<Body> createState() => _BodyState();
+}
+
+class _BodyState extends State<Body> {
+  final supabase = DatabaseConfig.client;
+  Map<String, List<Pelajaran>> jadwal = {};
+  bool isLoading = true;
+  String? errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    fetchJadwal();
+  }
+
+  Future<void> fetchJadwal() async {
+    try {
+      setState(() {
+        isLoading = true;
+        errorMessage = null;
+      });
+
+      final response = await supabase
+          .from('jadwal')
+          .select('nama, jam_awal, jam_akhir, code_warna, hari')
+          .order('hari')
+          .order('jam_awal');
+
+      final Map<String, List<Pelajaran>> groupedJadwal = {};
+      
+      for (var item in response) {
+        final hari = item['hari'] as String;
+        final nama = item['nama'] as String? ?? 'Tanpa Nama';
+        final jamAwal = item['jam_awal'] as String? ?? '00:00';
+        final jamAkhir = item['jam_akhir'] as String? ?? '00:00';
+        final codeWarna = item['code_warna'] as String? ?? '#000000';
+        
+        final pelajaran = Pelajaran(
+          nama: nama,
+          jam: '$jamAwal - $jamAkhir',
+          warna: Color(_hexToColor(codeWarna)),
+        );
+
+        if (groupedJadwal[hari] == null) {
+          groupedJadwal[hari] = [];
+        }
+        groupedJadwal[hari]!.add(pelajaran);
+      }
+
+      setState(() {
+        jadwal = groupedJadwal;
+        isLoading = false;
+      });
+        } catch (e) {
+      setState(() {
+        errorMessage = 'Terjadi kesalahan: $e';
+        isLoading = false;
+      });
+    }
+  }
+
+  int _hexToColor(String hex) {
+    hex = hex.replaceAll('#', '');
+    if (hex.length == 6) {
+      return int.parse('FF$hex', radix: 16);
+    } else if (hex.length == 8) {
+      return int.parse(hex, radix: 16);
+    } else {
+      return 0xFF000000; // Default black color
+    }
+  }
+
+  Future<void> _refreshData() async {
+    await fetchJadwal();
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (isLoading) {
+      return Container(
+        color: const Color(0xFFfaf3f4),
+        child: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (errorMessage != null) {
+      return Container(
+        color: const Color(0xFFfaf3f4),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                errorMessage!,
+                style: const TextStyle(color: Colors.red),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _refreshData,
+                child: const Text('Coba Lagi'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (jadwal.isEmpty) {
+      return Container(
+        color: const Color(0xFFfaf3f4),
+        child: const Center(
+          child: Text('Tidak ada data jadwal'),
+        ),
+      );
+    }
+
     return Stack(
       children: [
         Container(
           color: const Color(0xFFfaf3f4),
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: jadwal.entries.map((entry) {
-              return HariCard(
-                title: entry.key,
-                pelajaran: entry.value,
-              );
-            }).toList(),
+          child: RefreshIndicator(
+            onRefresh: _refreshData,
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: jadwal.entries.map((entry) {
+                return HariCard(
+                  title: entry.key,
+                  pelajaran: entry.value,
+                );
+              }).toList(),
+            ),
           ),
         ),
         const Positioned(

@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 import 'components/header.dart';
 import 'sections/body.dart';
+import 'connect.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize database
+  await DatabaseConfig.initialize();
+  
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
+  
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
