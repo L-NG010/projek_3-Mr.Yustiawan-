@@ -1,4 +1,3 @@
-// body.dart (UI with database integration)
 import 'package:flutter/material.dart';
 import '../components/card.dart';
 import '../model/pelajaran.dart';
@@ -17,6 +16,16 @@ class _BodyState extends State<Body> {
   Map<String, List<Pelajaran>> jadwal = {};
   bool isLoading = true;
   String? errorMessage;
+
+  // Define the correct order of days
+  final List<String> dayOrder = [
+    'Senin',
+    'Selasa',
+    'Rabu',
+    'Kamis',
+    "Jum'at",
+    'Sabtu',
+  ];
 
   @override
   void initState() {
@@ -38,36 +47,61 @@ class _BodyState extends State<Body> {
           .order('jam_awal');
 
       final Map<String, List<Pelajaran>> groupedJadwal = {};
-      
+
       for (var item in response) {
-        final hari = item['hari'] as String;
+        // Normalize day name to title case to avoid duplicates (e.g., "Jumat" vs "jumat")
+        final hari = _toTitleCase(item['hari'] as String);
         final nama = item['nama'] as String? ?? 'Tanpa Nama';
         final jamAwal = item['jam_awal'] as String? ?? '00:00';
         final jamAkhir = item['jam_akhir'] as String? ?? '00:00';
         final codeWarna = item['code_warna'] as String? ?? '#000000';
-        
+
         final pelajaran = Pelajaran(
           nama: nama,
           jam: '$jamAwal - $jamAkhir',
           warna: Color(_hexToColor(codeWarna)),
         );
 
+        // Group by normalized day name
         if (groupedJadwal[hari] == null) {
           groupedJadwal[hari] = [];
         }
         groupedJadwal[hari]!.add(pelajaran);
       }
 
+      // Sort pelajaran within each day by jam_awal
+      groupedJadwal.forEach((hari, pelajaranList) {
+        pelajaranList.sort((a, b) => a.jam.compareTo(b.jam));
+      });
+
+      // Create a sorted map based on dayOrder
+      final sortedJadwal = <String, List<Pelajaran>>{};
+      for (var day in dayOrder) {
+        if (groupedJadwal.containsKey(day)) {
+          sortedJadwal[day] = groupedJadwal[day]!;
+        }
+      }
+
       setState(() {
-        jadwal = groupedJadwal;
+        jadwal = sortedJadwal;
         isLoading = false;
       });
-        } catch (e) {
+    } catch (e) {
       setState(() {
         errorMessage = 'Terjadi kesalahan: $e';
         isLoading = false;
       });
     }
+  }
+
+  String _toTitleCase(String str) {
+    return str
+        .toLowerCase()
+        .split(' ')
+        .map((word) => word.isNotEmpty
+            ? '${word[0].toUpperCase()}${word.substring(1)}'
+            : word)
+        .join(' ');
   }
 
   int _hexToColor(String hex) {

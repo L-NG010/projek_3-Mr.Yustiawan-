@@ -29,7 +29,7 @@ class _AddModalState extends State<AddModal> {
     'Selasa',
     'Rabu',
     'Kamis',
-    'Jumat',
+    "Jum'at",
     'Sabtu',
   ];
 
