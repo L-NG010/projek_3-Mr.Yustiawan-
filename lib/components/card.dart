@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import '../model/pelajaran.dart';
 import '../sections/editModal.dart';
+import '../connect.dart'; // Import database config
 
 class HariCard extends StatefulWidget {
   final String title;
   final List<Pelajaran> pelajaran;
+  final VoidCallback? onScheduleChanged; // Callback untuk refresh data
 
   const HariCard({
     Key? key,
     required this.title,
     required this.pelajaran,
+    this.onScheduleChanged,
   }) : super(key: key);
 
   @override
@@ -17,9 +20,11 @@ class HariCard extends StatefulWidget {
 }
 
 class _HariCardState extends State<HariCard> with TickerProviderStateMixin {
+  final supabase = DatabaseConfig.client;
   bool _expanded = false;
+  bool _isDeleting = false;
 
-  void _showEditModal(Pelajaran pelajaran) {
+  void _showEditModal(Pelajaran pelajaran, int index) {
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -28,12 +33,13 @@ class _HariCardState extends State<HariCard> with TickerProviderStateMixin {
         child: EditModal(
           pelajaran: pelajaran,
           hari: widget.title,
+          onScheduleUpdated: widget.onScheduleChanged,
         ),
       ),
     );
   }
 
-  void _showOptionsMenu(Pelajaran pelajaran) {
+  void _showOptionsMenu(Pelajaran pelajaran, int index) {
     showModalBottomSheet(
       context: context,
       builder: (context) => Column(
@@ -44,7 +50,7 @@ class _HariCardState extends State<HariCard> with TickerProviderStateMixin {
             title: const Text('Edit'),
             onTap: () {
               Navigator.pop(context);
-              _showEditModal(pelajaran);
+              _showEditModal(pelajaran, index);
             },
           ),
           ListTile(
@@ -52,7 +58,7 @@ class _HariCardState extends State<HariCard> with TickerProviderStateMixin {
             title: const Text('Hapus', style: TextStyle(color: Colors.red)),
             onTap: () {
               Navigator.pop(context);
-              _showDeleteConfirmation();
+              _deleteSchedule(pelajaran); // Langsung hapus tanpa konfirmasi
             },
           ),
         ],
@@ -60,24 +66,63 @@ class _HariCardState extends State<HariCard> with TickerProviderStateMixin {
     );
   }
 
-  void _showDeleteConfirmation() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Hapus Jadwal'),
-        content: const Text('Yakin ingin menghapus jadwal ini?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Batal'),
+  Future<void> _deleteSchedule(Pelajaran pelajaran) async {
+    setState(() {
+      _isDeleting = true;
+    });
+
+    try {
+      // Parse jam untuk mendapatkan jam_awal dan jam_akhir
+      final jamParts = pelajaran.jam.split(' - ');
+      final jamAwal = jamParts.isNotEmpty ? jamParts[0] : '';
+      final jamAkhir = jamParts.length > 1 ? jamParts[1] : '';
+
+      // Convert Color ke hex string
+      String colorToHex(Color color) {
+        return '#${color.value.toRadixString(16).substring(2).toUpperCase()}';
+      }
+
+      // Hapus dari database berdasarkan kombinasi field yang unik
+      await supabase
+          .from('jadwal')
+          .delete()
+          .eq('hari', widget.title)
+          .eq('nama', pelajaran.nama)
+          .eq('jam_awal', jamAwal)
+          .eq('jam_akhir', jamAkhir)
+          .eq('code_warna', colorToHex(pelajaran.warna));
+
+      // Refresh data
+      if (mounted) {
+        widget.onScheduleChanged?.call(); // Panggil callback untuk refresh data
+
+        // Tampilkan snackbar sukses
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Jadwal "${pelajaran.nama}" berhasil dihapus'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Hapus', style: TextStyle(color: Colors.red)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        // Tampilkan error
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal menghapus jadwal: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
           ),
-        ],
-      ),
-    );
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDeleting = false;
+        });
+      }
+    }
   }
 
   @override
@@ -115,7 +160,6 @@ class _HariCardState extends State<HariCard> with TickerProviderStateMixin {
                     children: widget.pelajaran.asMap().entries.map((entry) {
                       final index = entry.key + 1;
                       final p = entry.value;
-
                       return Container(
                         margin: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 4),
@@ -134,11 +178,15 @@ class _HariCardState extends State<HariCard> with TickerProviderStateMixin {
                             Icon(Icons.book, color: p.warna),
                             const SizedBox(width: 8),
                             Expanded(child: Text(p.nama)),
-                            Text(p.jam,
-                                style: TextStyle(color: Colors.grey[700])),
+                            Text(
+                              p.jam,
+                              style: TextStyle(color: Colors.grey[700]),
+                            ),
                             IconButton(
                               icon: const Icon(Icons.more_vert),
-                              onPressed: () => _showOptionsMenu(p),
+                              onPressed: _isDeleting
+                                  ? null
+                                  : () => _showOptionsMenu(p, index),
                             ),
                           ],
                         ),

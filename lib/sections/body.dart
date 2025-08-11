@@ -49,7 +49,6 @@ class _BodyState extends State<Body> {
       final Map<String, List<Pelajaran>> groupedJadwal = {};
 
       for (var item in response) {
-        // Normalize day name to title case to avoid duplicates (e.g., "Jumat" vs "jumat")
         final hari = _toTitleCase(item['hari'] as String);
         final nama = item['nama'] as String? ?? 'Tanpa Nama';
         final jamAwal = item['jam_awal'] as String? ?? '00:00';
@@ -62,19 +61,16 @@ class _BodyState extends State<Body> {
           warna: Color(_hexToColor(codeWarna)),
         );
 
-        // Group by normalized day name
         if (groupedJadwal[hari] == null) {
           groupedJadwal[hari] = [];
         }
         groupedJadwal[hari]!.add(pelajaran);
       }
 
-      // Sort pelajaran within each day by jam_awal
       groupedJadwal.forEach((hari, pelajaranList) {
         pelajaranList.sort((a, b) => a.jam.compareTo(b.jam));
       });
 
-      // Create a sorted map based on dayOrder
       final sortedJadwal = <String, List<Pelajaran>>{};
       for (var day in dayOrder) {
         if (groupedJadwal.containsKey(day)) {
@@ -82,15 +78,19 @@ class _BodyState extends State<Body> {
         }
       }
 
-      setState(() {
-        jadwal = sortedJadwal;
-        isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          jadwal = sortedJadwal;
+          isLoading = false;
+        });
+      }
     } catch (e) {
-      setState(() {
-        errorMessage = 'Terjadi kesalahan: $e';
-        isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          errorMessage = 'Terjadi kesalahan: $e';
+          isLoading = false;
+        });
+      }
     }
   }
 
@@ -115,22 +115,17 @@ class _BodyState extends State<Body> {
     }
   }
 
+  // Callback untuk refresh data
   Future<void> _refreshData() async {
     await fetchJadwal();
-  }
-
-  // Fungsi callback untuk refresh data setelah menambah jadwal baru
-  void _onScheduleAdded() {
-    fetchJadwal(); // Refresh data tanpa loading indicator
   }
 
   // Convert jadwal data ke format yang dibutuhkan AddModal
   Map<String, List<Map<String, dynamic>>> _convertJadwalForModal() {
     Map<String, List<Map<String, dynamic>>> converted = {};
-    
+
     jadwal.forEach((hari, pelajaranList) {
       converted[hari] = pelajaranList.map((pelajaran) {
-        // Extract jam mulai dan jam akhir dari string "08:00 - 09:30"
         final jamParts = pelajaran.jam.split(' - ');
         return {
           'jamMulai': jamParts.isNotEmpty ? jamParts[0] : '00:00',
@@ -138,7 +133,7 @@ class _BodyState extends State<Body> {
         };
       }).toList();
     });
-    
+
     return converted;
   }
 
@@ -197,6 +192,7 @@ class _BodyState extends State<Body> {
                 return HariCard(
                   title: entry.key,
                   pelajaran: entry.value,
+                  onScheduleChanged: _refreshData, // Teruskan callback
                 );
               }).toList(),
             ),
@@ -206,8 +202,8 @@ class _BodyState extends State<Body> {
           bottom: 16,
           right: 16,
           child: AddButton(
-            onScheduleAdded: _onScheduleAdded, // Pass callback ke AddButton
-            existingSchedules: _convertJadwalForModal(), // Pass data jadwal untuk conflict detection
+            onScheduleAdded: _refreshData, // Gunakan callback yang sama
+            existingSchedules: _convertJadwalForModal(),
           ),
         ),
       ],
