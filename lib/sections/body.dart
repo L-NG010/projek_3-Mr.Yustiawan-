@@ -51,8 +51,14 @@ class _BodyState extends State<Body> {
       for (var item in response) {
         final hari = _toTitleCase(item['hari'] as String);
         final nama = item['nama'] as String? ?? 'Tanpa Nama';
-        final jamAwal = item['jam_awal'] as String? ?? '00:00';
-        final jamAkhir = item['jam_akhir'] as String? ?? '00:00';
+        final jamAwal = (item['jam_awal'] as String? ?? '00:00').substring(
+          0,
+          5,
+        );
+        final jamAkhir = (item['jam_akhir'] as String? ?? '00:00').substring(
+          0,
+          5,
+        );
         final codeWarna = item['code_warna'] as String? ?? '#000000';
 
         final pelajaran = Pelajaran(
@@ -98,9 +104,11 @@ class _BodyState extends State<Body> {
     return str
         .toLowerCase()
         .split(' ')
-        .map((word) => word.isNotEmpty
-            ? '${word[0].toUpperCase()}${word.substring(1)}'
-            : word)
+        .map(
+          (word) => word.isNotEmpty
+              ? '${word[0].toUpperCase()}${word.substring(1)}'
+              : word,
+        )
         .join(' ');
   }
 
@@ -142,9 +150,7 @@ class _BodyState extends State<Body> {
     if (isLoading) {
       return Container(
         color: const Color(0xFFfaf3f4),
-        child: const Center(
-          child: CircularProgressIndicator(),
-        ),
+        child: const Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -174,9 +180,7 @@ class _BodyState extends State<Body> {
     if (jadwal.isEmpty) {
       return Container(
         color: const Color(0xFFfaf3f4),
-        child: const Center(
-          child: Text('Tidak ada data jadwal'),
-        ),
+        child: const Center(child: Text('Tidak ada data jadwal')),
       );
     }
 
