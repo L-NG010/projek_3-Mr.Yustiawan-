@@ -16,6 +16,7 @@ class Header extends StatefulWidget implements PreferredSizeWidget {
 class _HeaderState extends State<Header> {
   final supabase = DatabaseConfig.client;
   String? username;
+  OverlayEntry? _overlayEntry;
 
   @override
   void initState() {
@@ -26,12 +27,85 @@ class _HeaderState extends State<Header> {
   void _loadUsername() {
     final user = supabase.auth.currentUser;
     if (user != null && user.email != null) {
-      // Ambil username dari email (username@example.com -> username)
       final email = user.email!;
       setState(() {
         username = email.split('@')[0];
       });
     }
+  }
+
+  void _showProfileMenu(BuildContext context) {
+    final overlay = Overlay.of(context);
+    final renderBox = context.findRenderObject() as RenderBox;
+    final position = renderBox.localToGlobal(Offset.zero);
+
+    _overlayEntry = OverlayEntry(
+      builder: (context) => Stack(
+        children: [
+          // This GestureDetector captures taps outside the menu
+          GestureDetector(
+            onTap: _hideProfileMenu,
+            behavior: HitTestBehavior.translucent,
+          ),
+          Positioned(
+            right: 16,  // Adjust this value to position the menu properly
+            top: position.dy + kToolbarHeight,
+            child: Material(
+              elevation: 4,
+              borderRadius: BorderRadius.circular(8),
+              color: Colors.white,
+              child: IntrinsicWidth(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(
+                        username ?? 'Pengguna',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    const Divider(height: 1, thickness: 1),
+                    InkWell(
+                      onTap: () {
+                        _hideProfileMenu();
+                        _showLogoutConfirmation(context);
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            Icon(Icons.logout, size: 18, color: Colors.red),
+                            SizedBox(width: 8),
+                            Text(
+                              'Keluar',
+                              style: TextStyle(
+                                color: Colors.red,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    overlay.insert(_overlayEntry!);
+  }
+
+  void _hideProfileMenu() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
   }
 
   @override
@@ -54,37 +128,24 @@ class _HeaderState extends State<Header> {
       ),
       actions: [
         if (user != null) ...[
-          // Profile info
-          Padding(
-            padding: const EdgeInsets.only(right: 8.0),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.account_circle,
-                  color: Colors.white,
-                  size: 28,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  username ?? 'User',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Logout button
           IconButton(
-            icon: const Icon(Icons.logout, color: Colors.white),
-            onPressed: () => _showLogoutConfirmation(context),
+            icon: const Icon(
+              Icons.account_circle,
+              color: Colors.white,
+              size: 28,
+            ),
+            onPressed: () => _showProfileMenu(context),
           ),
+          const SizedBox(width: 8),
         ],
       ],
     );
+  }
+
+  @override
+  void dispose() {
+    _hideProfileMenu();
+    super.dispose();
   }
 
   void _showLogoutConfirmation(BuildContext context) {
@@ -92,7 +153,7 @@ class _HeaderState extends State<Header> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Konfirmasi'),
-        content: const Text('Yakin ingin logout?'),
+        content: const Text('Yakin ingin keluar?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -103,7 +164,7 @@ class _HeaderState extends State<Header> {
               Navigator.pop(context);
               await _performLogout(context);
             },
-            child: const Text('Logout', style: TextStyle(color: Colors.red)),
+            child: const Text('Keluar', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -113,7 +174,6 @@ class _HeaderState extends State<Header> {
   Future<void> _performLogout(BuildContext context) async {
     final scaffold = ScaffoldMessenger.of(context);
     
-    // Show loading dialog
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -123,15 +183,12 @@ class _HeaderState extends State<Header> {
     );
 
     try {
-      // Logout dengan Supabase Auth
       await supabase.auth.signOut();
       
       if (!mounted) return;
       
-      // Tutup loading dialog
       Navigator.of(context).pop();
       
-      // Redirect ke auth screen
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const AuthWrapper()),
         (route) => false,
@@ -139,13 +196,11 @@ class _HeaderState extends State<Header> {
     } catch (e) {
       if (!mounted) return;
       
-      // Tutup loading dialog
       Navigator.of(context).pop();
       
-      // Show error
       scaffold.showSnackBar(
         SnackBar(
-          content: Text('Logout gagal: ${e.toString()}'),
+          content: Text('Gagal keluar: ${e.toString()}'),
           backgroundColor: Colors.red,
         ),
       );
