@@ -25,6 +25,7 @@ class _EditModalState extends State<EditModal> {
   late TextEditingController namaController;
   late TextEditingController jamMulaiController;
   late TextEditingController jamBerakhirController;
+  late TextEditingController namaGuruController; // Controller for namaGuru
   late Color selectedColor;
   String? selectedHari;
   String? errorMessage;
@@ -60,8 +61,15 @@ class _EditModalState extends State<EditModal> {
     // Parse the existing jam into start and end times
     final jamParts = widget.pelajaran.jam.split(' - ');
     namaController = TextEditingController(text: widget.pelajaran.nama);
-    jamMulaiController = TextEditingController(text: jamParts.isNotEmpty ? jamParts[0] : '');
-    jamBerakhirController = TextEditingController(text: jamParts.length > 1 ? jamParts[1] : '');
+    jamMulaiController = TextEditingController(
+      text: jamParts.isNotEmpty ? jamParts[0] : '',
+    );
+    jamBerakhirController = TextEditingController(
+      text: jamParts.length > 1 ? jamParts[1] : '',
+    );
+    namaGuruController = TextEditingController(
+      text: widget.pelajaran.namaGuru,
+    ); // Initialize namaGuru
     selectedColor = widget.pelajaran.warna;
     selectedHari = widget.hari;
   }
@@ -85,8 +93,12 @@ class _EditModalState extends State<EditModal> {
 
     // Parse original jam for comparison
     final originalJamParts = widget.pelajaran.jam.split(' - ');
-    final originalStart = _parseTime(originalJamParts.isNotEmpty ? originalJamParts[0] : '00:00');
-    final originalEnd = _parseTime(originalJamParts.length > 1 ? originalJamParts[1] : '00:00');
+    final originalStart = _parseTime(
+      originalJamParts.isNotEmpty ? originalJamParts[0] : '00:00',
+    );
+    final originalEnd = _parseTime(
+      originalJamParts.length > 1 ? originalJamParts[1] : '00:00',
+    );
 
     for (final schedule in existingSchedules) {
       final existingStart = _parseTime(schedule['jamMulai']);
@@ -119,8 +131,12 @@ class _EditModalState extends State<EditModal> {
     try {
       // Parse jam asli untuk identifikasi record
       final originalJamParts = widget.pelajaran.jam.split(' - ');
-      final originalJamAwal = originalJamParts.isNotEmpty ? originalJamParts[0] : '';
-      final originalJamAkhir = originalJamParts.length > 1 ? originalJamParts[1] : '';
+      final originalJamAwal = originalJamParts.isNotEmpty
+          ? originalJamParts[0]
+          : '';
+      final originalJamAkhir = originalJamParts.length > 1
+          ? originalJamParts[1]
+          : '';
       final originalColorHex = _colorToHex(widget.pelajaran.warna);
 
       // Data baru untuk update
@@ -130,6 +146,7 @@ class _EditModalState extends State<EditModal> {
         'jam_awal': jamMulaiController.text.trim(),
         'jam_akhir': jamBerakhirController.text.trim(),
         'code_warna': _colorToHex(selectedColor),
+        'nama_guru': namaGuruController.text.trim(), // Include nama_guru
       };
 
       // Update berdasarkan kombinasi field yang unik (data asli)
@@ -141,15 +158,19 @@ class _EditModalState extends State<EditModal> {
           .eq('jam_awal', originalJamAwal)
           .eq('jam_akhir', originalJamAkhir)
           .eq('code_warna', originalColorHex)
+          .eq(
+            'nama_guru',
+            widget.pelajaran.namaGuru,
+          ) // Add nama_guru to match original record
           .select();
 
       if (response.isNotEmpty) {
         // Panggil callback refresh jika ada
         widget.onScheduleUpdated?.call();
-        
+
         // Tutup dialog
         if (mounted) Navigator.pop(context);
-        
+
         // Tampilkan snackbar sukses
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -188,6 +209,15 @@ class _EditModalState extends State<EditModal> {
     if (namaController.text.trim().isEmpty) {
       setState(() {
         errorMessage = 'Nama pelajaran tidak boleh kosong';
+        isLoading = false;
+      });
+      return;
+    }
+
+    // Validasi nama guru
+    if (namaGuruController.text.trim().isEmpty) {
+      setState(() {
+        errorMessage = 'Nama guru tidak boleh kosong';
         isLoading = false;
       });
       return;
@@ -255,6 +285,7 @@ class _EditModalState extends State<EditModal> {
     namaController.dispose();
     jamMulaiController.dispose();
     jamBerakhirController.dispose();
+    namaGuruController.dispose(); // Dispose namaGuruController
     super.dispose();
   }
 
@@ -322,6 +353,14 @@ class _EditModalState extends State<EditModal> {
             ),
             const SizedBox(height: 16),
 
+            _buildTextFieldWithLabel(
+              label: 'Nama Guru *',
+              controller: namaGuruController,
+              hint: 'Masukkan nama guru',
+              enabled: !isLoading,
+            ),
+            const SizedBox(height: 16),
+
             Row(
               children: [
                 Expanded(
@@ -364,11 +403,7 @@ class _EditModalState extends State<EditModal> {
             color: selectedColor.withOpacity(0.1),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(
-            Icons.edit,
-            color: const Color(0xFF4A4877),
-            size: 24,
-          ),
+          child: Icon(Icons.edit, color: const Color(0xFF4A4877), size: 24),
         ),
         const SizedBox(width: 12),
         const Expanded(

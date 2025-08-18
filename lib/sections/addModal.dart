@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '/connect.dart'; // Import database config
+import '../connect.dart'; // Import database config
 
 class AddModal extends StatefulWidget {
   final Map<String, List<Map<String, dynamic>>> existingSchedules;
@@ -17,9 +17,10 @@ class AddModal extends StatefulWidget {
 
 class _AddModalState extends State<AddModal> {
   String? selectedHari;
-  final TextEditingController namaController = TextEditingController();
+  final TextEditingController namaMapelController = TextEditingController();
   final TextEditingController jamMulaiController = TextEditingController();
   final TextEditingController jamBerakhirController = TextEditingController();
+  final TextEditingController namaGuruController = TextEditingController();
   Color selectedColor = const Color(0xFF6366F1);
   String? errorMessage;
   bool isLoading = false;
@@ -29,7 +30,7 @@ class _AddModalState extends State<AddModal> {
     'Selasa',
     'Rabu',
     'Kamis',
-    "Jum'at",
+    'Jumat',
     'Sabtu',
   ];
 
@@ -83,34 +84,128 @@ class _AddModalState extends State<AddModal> {
     return '#${color.value.toRadixString(16).substring(2).toUpperCase()}';
   }
 
-  Future<void> _saveToDatabase() async {
-  try {
-    final supabase = DatabaseConfig.client;
-    
-    final data = {
-      'hari': selectedHari!,
-      'nama': namaController.text.trim(),
-      'jam_awal': jamMulaiController.text.trim(),
-      'jam_akhir': jamBerakhirController.text.trim(),
-      'code_warna': _colorToHex(selectedColor),
-    };
-
-    final response = await supabase.from('jadwal').insert(data).select();
-
-    if (response.isNotEmpty) {
-      // Panggil callback refresh jika ada
-      widget.onScheduleAdded?.call();
+  Future<String?> _getOrCreateMapel(String namaMapel, String codeWarna) async {
+    try {
+      final supabase = DatabaseConfig.client;
       
-      // Tutup dialog
-      if (mounted) Navigator.pop(context);
+      // Check if mapel already exists
+      final existingMapel = await supabase
+          .from('mapel')
+          .select('id')
+          .eq('nama', namaMapel.trim())
+          .maybeSingle();
+
+      if (existingMapel != null) {
+        return existingMapel['id'] as String;
+      }
+
+      // Create new mapel if doesn't exist
+      final newMapel = await supabase
+          .from('mapel')
+          .insert({
+            'nama': namaMapel.trim(),
+            'code_warna': codeWarna,
+          })
+          .select('id')
+          .single();
+
+      return newMapel['id'] as String;
+    } catch (e) {
+      throw Exception('Gagal membuat/mencari mata pelajaran: $e');
     }
-  } catch (e) {
-    setState(() {
-      errorMessage = 'Gagal menyimpan: $e';
-      isLoading = false;
-    });
   }
-}
+
+  Future<String?> _getOrCreateGuru(String namaGuru) async {
+    try {
+      final supabase = DatabaseConfig.client;
+      
+      // Check if guru already exists
+      final existingGuru = await supabase
+          .from('guru')
+          .select('id')
+          .eq('nama', namaGuru.trim())
+          .maybeSingle();
+
+      if (existingGuru != null) {
+        return existingGuru['id'] as String;
+      }
+
+      // Create new guru if doesn't exist
+      final newGuru = await supabase
+          .from('guru')
+          .insert({
+            'nama': namaGuru.trim(),
+          })
+          .select('id')
+          .single();
+
+      return newGuru['id'] as String;
+    } catch (e) {
+      throw Exception('Gagal membuat/mencari guru: $e');
+    }
+  }
+
+  Future<void> _saveToDatabase() async {
+    try {
+      final supabase = DatabaseConfig.client;
+      final user = supabase.auth.currentUser;
+      
+      if (user == null) {
+        throw Exception('User tidak ditemukan');
+      }
+
+      // Get or create mapel
+      final mapelId = await _getOrCreateMapel(
+        namaMapelController.text.trim(),
+        _colorToHex(selectedColor),
+      );
+
+      // Get or create guru
+      final guruId = await _getOrCreateGuru(namaGuruController.text.trim());
+
+      if (mapelId == null || guruId == null) {
+        throw Exception('Gagal mendapatkan ID mapel atau guru');
+      }
+
+      // Insert into jadwal table
+      final jadwalData = {
+        'user_id': user.id,
+        'mapel_id': mapelId,
+        'guru_id': guruId,
+        'hari': selectedHari!,
+        'jam_awal': '${jamMulaiController.text.trim()}:00',
+        'jam_akhir': '${jamBerakhirController.text.trim()}:00',
+      };
+
+      final response = await supabase
+          .from('jadwal')
+          .insert(jadwalData)
+          .select();
+
+      if (response.isNotEmpty) {
+        // Show success message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Jadwal berhasil ditambahkan!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+
+        // Call refresh callback
+        widget.onScheduleAdded?.call();
+
+        // Close dialog
+        if (mounted) Navigator.pop(context);
+      }
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Gagal menyimpan: $e';
+        isLoading = false;
+      });
+    }
+  }
 
   Future<void> _handleSave() async {
     setState(() {
@@ -127,10 +222,19 @@ class _AddModalState extends State<AddModal> {
       return;
     }
 
-    // Validasi nama pelajaran
-    if (namaController.text.trim().isEmpty) {
+    // Validasi nama mata pelajaran
+    if (namaMapelController.text.trim().isEmpty) {
       setState(() {
-        errorMessage = 'Nama pelajaran tidak boleh kosong';
+        errorMessage = 'Nama mata pelajaran tidak boleh kosong';
+        isLoading = false;
+      });
+      return;
+    }
+
+    // Validasi nama guru
+    if (namaGuruController.text.trim().isEmpty) {
+      setState(() {
+        errorMessage = 'Nama guru tidak boleh kosong';
         isLoading = false;
       });
       return;
@@ -195,9 +299,10 @@ class _AddModalState extends State<AddModal> {
 
   @override
   void dispose() {
-    namaController.dispose();
+    namaMapelController.dispose();
     jamMulaiController.dispose();
     jamBerakhirController.dispose();
+    namaGuruController.dispose();
     super.dispose();
   }
 
@@ -263,9 +368,17 @@ class _AddModalState extends State<AddModal> {
               const SizedBox(height: 16),
 
               _buildTextFieldWithLabel(
-                label: 'Nama Pelajaran *',
-                controller: namaController,
-                hint: 'Masukkan nama pelajaran',
+                label: 'Nama Mata Pelajaran *',
+                controller: namaMapelController,
+                hint: 'Masukkan nama mata pelajaran',
+                enabled: !isLoading,
+              ),
+              const SizedBox(height: 16),
+
+              _buildTextFieldWithLabel(
+                label: 'Nama Guru *',
+                controller: namaGuruController,
+                hint: 'Masukkan nama guru',
                 enabled: !isLoading,
               ),
               const SizedBox(height: 16),
