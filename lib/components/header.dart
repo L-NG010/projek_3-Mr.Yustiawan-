@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import '../connect.dart';
 import '../main.dart';
+import '../screen/setting.dart';
 
 class Header extends StatefulWidget implements PreferredSizeWidget {
   const Header({super.key});
@@ -48,7 +49,7 @@ class _HeaderState extends State<Header> {
             behavior: HitTestBehavior.translucent,
           ),
           Positioned(
-            right: 16,  // Adjust this value to position the menu properly
+            right: 16,
             top: position.dy + kToolbarHeight,
             child: Material(
               elevation: 4,
@@ -69,6 +70,31 @@ class _HeaderState extends State<Header> {
                       ),
                     ),
                     const Divider(height: 1, thickness: 1),
+                    // Add Settings Menu Item
+                    InkWell(
+                      onTap: () {
+                        _hideProfileMenu();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const SettingsPage()),
+                        );
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            Icon(Icons.settings, size: 18, color: Colors.blue),
+                            SizedBox(width: 8),
+                            Text(
+                              'Pengaturan',
+                              style: TextStyle(
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                     InkWell(
                       onTap: () {
                         _hideProfileMenu();
