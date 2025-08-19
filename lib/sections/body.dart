@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../components/card.dart';
 import '../model/pelajaran.dart';
 import '../components/addButton.dart';
-import '../sections/addModal.dart'; // Import AddModal
+import '../sections/addModal.dart';
 import '../connect.dart';
 
 class Body extends StatefulWidget {
@@ -47,6 +47,7 @@ class _BodyState extends State<Body> {
       setState(() {
         isLoading = false;
         hasAnySchedule = false;
+        errorMessage = 'User tidak ditemukan';
       });
       return;
     }
@@ -57,7 +58,7 @@ class _BodyState extends State<Body> {
         errorMessage = null;
       });
 
-      // Updated query to match new database schema
+      // Updated query to fetch code_warna from mapel table
       final response = await supabase
           .from('jadwal')
           .select('''
@@ -65,8 +66,9 @@ class _BodyState extends State<Body> {
             hari,
             jam_awal,
             jam_akhir,
-            mapel:mapel_id(nama, code_warna),
-            guru:guru_id(nama)
+            mapel:mapel_id(id, nama, code_warna),
+            guru:guru_id(id, nama),
+            u_id
           ''')
           .eq('u_id', userId!)
           .order('hari')
@@ -86,12 +88,12 @@ class _BodyState extends State<Body> {
         final hari = item['hari'] as String;
         final mapel = item['mapel'] as Map<String, dynamic>? ?? {};
         final guru = item['guru'] as Map<String, dynamic>? ?? {};
-        
+
         final nama = mapel['nama'] as String? ?? 'Tanpa Nama';
         final codeWarna = mapel['code_warna'] as String? ?? '#000000';
-        final namaGuru = guru['nama'] as String? ?? 'Mr. Lang';
-        final jamAwal = (item['jam_awal'] as String? ?? '00:00').substring(0, 5);
-        final jamAkhir = (item['jam_akhir'] as String? ?? '00:00').substring(0, 5);
+        final namaGuru = guru['nama'] as String? ?? 'Tanpa Nama';
+        final jamAwal = (item['jam_awal'] as String? ?? '00:00:00').substring(0, 5);
+        final jamAkhir = (item['jam_akhir'] as String? ?? '00:00:00').substring(0, 5);
 
         final pelajaran = Pelajaran(
           id: item['id'].toString(),
@@ -119,7 +121,7 @@ class _BodyState extends State<Body> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          errorMessage = 'Terjadi kesalahan: $e';
+          errorMessage = 'Terjadi kesalahan saat memuat jadwal: $e';
           isLoading = false;
           hasAnySchedule = false;
         });
@@ -133,9 +135,8 @@ class _BodyState extends State<Body> {
       return int.parse('FF$hex', radix: 16);
     } else if (hex.length == 8) {
       return int.parse(hex, radix: 16);
-    } else {
-      return 0xFF000000; // Default black color
     }
+    return 0xFF000000; // Default black color
   }
 
   Future<void> _refreshData() async {
@@ -181,8 +182,6 @@ class _BodyState extends State<Body> {
           padding: const EdgeInsets.all(16),
           children: [
             SizedBox(height: MediaQuery.of(context).size.height * 0.15),
-            
-            // Icon
             Center(
               child: Container(
                 width: 120,
@@ -198,10 +197,7 @@ class _BodyState extends State<Body> {
                 ),
               ),
             ),
-            
             const SizedBox(height: 32),
-            
-            // Title
             const Text(
               'Kamu Belum Punya Jadwal',
               textAlign: TextAlign.center,
@@ -211,10 +207,7 @@ class _BodyState extends State<Body> {
                 color: Color(0xFF4A4877),
               ),
             ),
-            
             const SizedBox(height: 16),
-            
-            // Subtitle
             Text(
               'Mulai atur jadwal kuliah kamu dengan\nmenambahkan mata kuliah pertama',
               textAlign: TextAlign.center,
@@ -224,10 +217,7 @@ class _BodyState extends State<Body> {
                 height: 1.5,
               ),
             ),
-            
             const SizedBox(height: 48),
-            
-            // Add Schedule Button
             Center(
               child: ElevatedButton.icon(
                 onPressed: _showAddModal,
@@ -250,7 +240,6 @@ class _BodyState extends State<Body> {
                 ),
               ),
             ),
-            
             const SizedBox(height: 24),
           ],
         ),
@@ -270,14 +259,11 @@ class _BodyState extends State<Body> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                // Show loading indicator at the top if still loading
                 if (isLoading)
                   const Padding(
                     padding: EdgeInsets.all(16.0),
                     child: Center(child: CircularProgressIndicator()),
                   ),
-                
-                // Show error message if there's an error
                 if (errorMessage != null && !isLoading)
                   Container(
                     margin: const EdgeInsets.only(bottom: 16),
@@ -306,8 +292,6 @@ class _BodyState extends State<Body> {
                       ],
                     ),
                   ),
-
-                // Show the day cards
                 ...dayOrder.map((day) {
                   return HariCard(
                     title: day,
@@ -316,15 +300,11 @@ class _BodyState extends State<Body> {
                     existingSchedules: existingSchedules,
                   );
                 }).toList(),
-
-                // Add some bottom padding for the floating action button
                 const SizedBox(height: 80),
               ],
             ),
           ),
         ),
-        
-        // Show AddButton when there are schedules
         Positioned(
           bottom: 16,
           right: 16,
@@ -339,7 +319,6 @@ class _BodyState extends State<Body> {
 
   @override
   Widget build(BuildContext context) {
-    // Show loading state
     if (isLoading) {
       return Container(
         color: const Color(0xFFfaf3f4),
@@ -347,7 +326,6 @@ class _BodyState extends State<Body> {
       );
     }
 
-    // Show error state
     if (errorMessage != null) {
       return Container(
         color: const Color(0xFFfaf3f4),
@@ -400,12 +378,10 @@ class _BodyState extends State<Body> {
       );
     }
 
-    // Show empty state when no schedules
     if (!hasAnySchedule) {
       return _buildEmptyState();
     }
 
-    // Show schedule list when has schedules
     return _buildScheduleList();
   }
 }
