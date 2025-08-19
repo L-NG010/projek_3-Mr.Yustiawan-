@@ -68,7 +68,7 @@ class _BodyState extends State<Body> {
             mapel:mapel_id(nama, code_warna),
             guru:guru_id(nama)
           ''')
-          .eq('user_id', userId!)
+          .eq('u_id', userId!)
           .order('hari')
           .order('jam_awal');
 

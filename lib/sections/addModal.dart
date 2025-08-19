@@ -3,7 +3,7 @@ import '../connect.dart'; // Import database config
 
 class AddModal extends StatefulWidget {
   final Map<String, List<Map<String, dynamic>>> existingSchedules;
-  final VoidCallback? onScheduleAdded; // Callback untuk refresh data
+  final VoidCallback? onScheduleAdded;
 
   const AddModal({
     super.key,
@@ -17,13 +17,16 @@ class AddModal extends StatefulWidget {
 
 class _AddModalState extends State<AddModal> {
   String? selectedHari;
-  final TextEditingController namaMapelController = TextEditingController();
-  final TextEditingController jamMulaiController = TextEditingController();
-  final TextEditingController jamBerakhirController = TextEditingController();
-  final TextEditingController namaGuruController = TextEditingController();
-  Color selectedColor = const Color(0xFF6366F1);
+  String? selectedMapel;
+  String? selectedGuru;
+  String? selectedJamMulai;
+  String? selectedJamBerakhir;
   String? errorMessage;
   bool isLoading = false;
+  bool isFetchingData = true;
+
+  List<Map<String, dynamic>> mapelList = [];
+  List<Map<String, dynamic>> guruList = [];
 
   final List<String> hariList = [
     'Senin',
@@ -34,80 +37,128 @@ class _AddModalState extends State<AddModal> {
     'Sabtu',
   ];
 
-  final List<Color> colorOptions = [
-    const Color(0xFF6366F1),
-    const Color(0xFF8B5CF6),
-    const Color(0xFFEC4899),
-    const Color(0xFFEF4444),
-    const Color(0xFFF97316),
-    const Color(0xFFEAB308),
-    const Color(0xFF22C55E),
-    const Color(0xFF10B981),
-    const Color(0xFF06B6D4),
-    const Color(0xFF3B82F6),
-    const Color(0xFF8B5A2B),
-    const Color(0xFF6B7280),
+  final List<String> mondayTimeSlots = [
+    '07:30', '08:10', '08:50', '09:30', '10:10', '10:40', '11:20', '12:00', '12:40' , '13:20'
   ];
 
-  bool _validateTimeFormat(String time) {
-    final RegExp timeRegex = RegExp(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$');
-    return timeRegex.hasMatch(time);
+  final List<String> otherDaysTimeSlots = [
+    '06:30', '07:10', '07:50', '08:30', '09:10', '09:40',
+    '10:20', '11:00', '11:40', '12:20', '13:00', '13:40', '14:20'
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchMapelAndGuru();
   }
 
-  TimeOfDay _parseTime(String time) {
-    final parts = time.split(':');
-    return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+  Future<void> _fetchMapelAndGuru() async {
+    setState(() {
+      isFetchingData = true;
+      selectedMapel = null; // Reset to prevent invalid selections
+      selectedGuru = null; // Reset to prevent invalid selections
+    });
+
+    try {
+      final supabase = DatabaseConfig.client;
+      final user = supabase.auth.currentUser;
+
+      if (user == null) {
+        throw Exception('User tidak ditemukan');
+      }
+
+      // Fetch mapel filtered by u_id
+      final mapelResponse = await supabase
+          .from('mapel')
+          .select('id, nama')
+          .eq('u_id', user.id)
+          .order('nama', ascending: true);
+
+      // Fetch guru filtered by u_id
+      final guruResponse = await supabase
+          .from('guru')
+          .select('id, nama')
+          .eq('u_id', user.id)
+          .order('nama', ascending: true);
+
+      setState(() {
+        mapelList = List<Map<String, dynamic>>.from(mapelResponse);
+        guruList = List<Map<String, dynamic>>.from(guruResponse);
+        isFetchingData = false;
+      });
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Gagal memuat data mata pelajaran atau guru: $e';
+        isFetchingData = false;
+      });
+    }
+  }
+
+  List<String> get availableJamMulai {
+    if (selectedHari == null) return [];
+    return selectedHari == 'Senin' ? mondayTimeSlots : otherDaysTimeSlots;
+  }
+
+  List<String> get availableJamBerakhir {
+    if (selectedJamMulai == null) return [];
+    final startIndex = selectedHari == 'Senin'
+        ? mondayTimeSlots.indexOf(selectedJamMulai!)
+        : otherDaysTimeSlots.indexOf(selectedJamMulai!);
+    if (startIndex == -1) return [];
+    return selectedHari == 'Senin'
+        ? mondayTimeSlots.sublist(startIndex + 1)
+        : otherDaysTimeSlots.sublist(startIndex + 1);
   }
 
   bool _checkScheduleConflict() {
-    if (selectedHari == null) return false;
+    if (selectedHari == null || selectedJamMulai == null || selectedJamBerakhir == null) {
+      return false;
+    }
 
     final existingSchedules = widget.existingSchedules[selectedHari] ?? [];
-    final newStart = _parseTime(jamMulaiController.text);
-    final newEnd = _parseTime(jamBerakhirController.text);
-
     for (final schedule in existingSchedules) {
-      final existingStart = _parseTime(schedule['jamMulai']);
-      final existingEnd = _parseTime(schedule['jamBerakhir']);
-
-      if ((newStart.hour * 60 + newStart.minute) <
-              (existingEnd.hour * 60 + existingEnd.minute) &&
-          (newEnd.hour * 60 + newEnd.minute) >
-              (existingStart.hour * 60 + existingStart.minute)) {
+      final existingStart = schedule['jamMulai'] as String;
+      final existingEnd = schedule['jamBerakhir'] as String;
+      if (selectedJamMulai!.compareTo(existingEnd) < 0 &&
+          selectedJamBerakhir!.compareTo(existingStart) > 0) {
         return true;
       }
     }
     return false;
   }
 
-  String _colorToHex(Color color) {
-    return '#${color.value.toRadixString(16).substring(2).toUpperCase()}';
-  }
-
-  Future<String?> _getOrCreateMapel(String namaMapel, String codeWarna) async {
+  Future<String?> _getOrCreateMapel(String namaMapel) async {
     try {
       final supabase = DatabaseConfig.client;
-      
-      // Check if mapel already exists
+      final user = supabase.auth.currentUser;
+
+      if (user == null) {
+        throw Exception('User tidak ditemukan');
+      }
+
       final existingMapel = await supabase
           .from('mapel')
           .select('id')
           .eq('nama', namaMapel.trim())
+          .eq('u_id', user.id)
           .maybeSingle();
 
       if (existingMapel != null) {
         return existingMapel['id'] as String;
       }
 
-      // Create new mapel if doesn't exist
       final newMapel = await supabase
           .from('mapel')
           .insert({
             'nama': namaMapel.trim(),
-            'code_warna': codeWarna,
+            'code_warna': '#6366F1', // Default color
+            'u_id': user.id,
           })
           .select('id')
           .single();
+
+      // Refresh mapelList after inserting new mapel
+      await _fetchMapelAndGuru();
 
       return newMapel['id'] as String;
     } catch (e) {
@@ -118,26 +169,34 @@ class _AddModalState extends State<AddModal> {
   Future<String?> _getOrCreateGuru(String namaGuru) async {
     try {
       final supabase = DatabaseConfig.client;
-      
-      // Check if guru already exists
+      final user = supabase.auth.currentUser;
+
+      if (user == null) {
+        throw Exception('User tidak ditemukan');
+      }
+
       final existingGuru = await supabase
           .from('guru')
           .select('id')
           .eq('nama', namaGuru.trim())
+          .eq('u_id', user.id)
           .maybeSingle();
 
       if (existingGuru != null) {
         return existingGuru['id'] as String;
       }
 
-      // Create new guru if doesn't exist
       final newGuru = await supabase
           .from('guru')
           .insert({
             'nama': namaGuru.trim(),
+            'u_id': user.id,
           })
           .select('id')
           .single();
+
+      // Refresh guruList after inserting new guru
+      await _fetchMapelAndGuru();
 
       return newGuru['id'] as String;
     } catch (e) {
@@ -149,32 +208,31 @@ class _AddModalState extends State<AddModal> {
     try {
       final supabase = DatabaseConfig.client;
       final user = supabase.auth.currentUser;
-      
+
       if (user == null) {
         throw Exception('User tidak ditemukan');
       }
 
-      // Get or create mapel
-      final mapelId = await _getOrCreateMapel(
-        namaMapelController.text.trim(),
-        _colorToHex(selectedColor),
-      );
+      if (selectedMapel == null || selectedGuru == null ||
+          selectedJamMulai == null || selectedJamBerakhir == null ||
+          selectedHari == null) {
+        throw Exception('Data tidak lengkap');
+      }
 
-      // Get or create guru
-      final guruId = await _getOrCreateGuru(namaGuruController.text.trim());
+      final mapelId = await _getOrCreateMapel(selectedMapel!);
+      final guruId = await _getOrCreateGuru(selectedGuru!);
 
       if (mapelId == null || guruId == null) {
         throw Exception('Gagal mendapatkan ID mapel atau guru');
       }
 
-      // Insert into jadwal table
       final jadwalData = {
-        'user_id': user.id,
+        'u_id': user.id,
         'mapel_id': mapelId,
         'guru_id': guruId,
         'hari': selectedHari!,
-        'jam_awal': '${jamMulaiController.text.trim()}:00',
-        'jam_akhir': '${jamBerakhirController.text.trim()}:00',
+        'jam_awal': '$selectedJamMulai:00',
+        'jam_akhir': '$selectedJamBerakhir:00',
       };
 
       final response = await supabase
@@ -183,7 +241,6 @@ class _AddModalState extends State<AddModal> {
           .select();
 
       if (response.isNotEmpty) {
-        // Show success message
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -192,11 +249,7 @@ class _AddModalState extends State<AddModal> {
             ),
           );
         }
-
-        // Call refresh callback
         widget.onScheduleAdded?.call();
-
-        // Close dialog
         if (mounted) Navigator.pop(context);
       }
     } catch (e) {
@@ -213,7 +266,6 @@ class _AddModalState extends State<AddModal> {
       isLoading = true;
     });
 
-    // Validasi hari
     if (selectedHari == null) {
       setState(() {
         errorMessage = 'Pilih hari terlebih dahulu';
@@ -222,64 +274,33 @@ class _AddModalState extends State<AddModal> {
       return;
     }
 
-    // Validasi nama mata pelajaran
-    if (namaMapelController.text.trim().isEmpty) {
+    if (selectedMapel == null) {
       setState(() {
-        errorMessage = 'Nama mata pelajaran tidak boleh kosong';
+        errorMessage = 'Pilih mata pelajaran terlebih dahulu';
         isLoading = false;
       });
       return;
     }
 
-    // Validasi nama guru
-    if (namaGuruController.text.trim().isEmpty) {
+    if (selectedGuru == null) {
       setState(() {
-        errorMessage = 'Nama guru tidak boleh kosong';
+        errorMessage = 'Pilih guru terlebih dahulu';
         isLoading = false;
       });
       return;
     }
 
-    // Validasi jam mulai
-    if (jamMulaiController.text.trim().isEmpty) {
+    if (selectedJamMulai == null) {
       setState(() {
-        errorMessage = 'Jam mulai tidak boleh kosong';
+        errorMessage = 'Pilih jam mulai terlebih dahulu';
         isLoading = false;
       });
       return;
     }
 
-    if (!_validateTimeFormat(jamMulaiController.text)) {
+    if (selectedJamBerakhir == null) {
       setState(() {
-        errorMessage = 'Format jam mulai tidak valid (HH:mm)';
-        isLoading = false;
-      });
-      return;
-    }
-
-    // Validasi jam berakhir
-    if (jamBerakhirController.text.trim().isEmpty) {
-      setState(() {
-        errorMessage = 'Jam berakhir tidak boleh kosong';
-        isLoading = false;
-      });
-      return;
-    }
-
-    if (!_validateTimeFormat(jamBerakhirController.text)) {
-      setState(() {
-        errorMessage = 'Format jam berakhir tidak valid (HH:mm)';
-        isLoading = false;
-      });
-      return;
-    }
-
-    final startTime = _parseTime(jamMulaiController.text);
-    final endTime = _parseTime(jamBerakhirController.text);
-
-    if (endTime.isBefore(startTime)) {
-      setState(() {
-        errorMessage = 'Jam berakhir harus setelah jam mulai';
+        errorMessage = 'Pilih jam berakhir terlebih dahulu';
         isLoading = false;
       });
       return;
@@ -293,17 +314,7 @@ class _AddModalState extends State<AddModal> {
       return;
     }
 
-    // Simpan ke database
     await _saveToDatabase();
-  }
-
-  @override
-  void dispose() {
-    namaMapelController.dispose();
-    jamMulaiController.dispose();
-    jamBerakhirController.dispose();
-    namaGuruController.dispose();
-    super.dispose();
   }
 
   @override
@@ -333,10 +344,7 @@ class _AddModalState extends State<AddModal> {
             children: [
               if (errorMessage != null) ...[
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 12,
-                    horizontal: 16,
-                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                   decoration: BoxDecoration(
                     color: Colors.red[50],
                     borderRadius: BorderRadius.circular(12),
@@ -367,46 +375,23 @@ class _AddModalState extends State<AddModal> {
               _buildHariDropdown(),
               const SizedBox(height: 16),
 
-              _buildTextFieldWithLabel(
-                label: 'Nama Mata Pelajaran *',
-                controller: namaMapelController,
-                hint: 'Masukkan nama mata pelajaran',
-                enabled: !isLoading,
-              ),
+              isFetchingData
+                  ? const Center(child: CircularProgressIndicator())
+                  : _buildMapelDropdown(),
               const SizedBox(height: 16),
 
-              _buildTextFieldWithLabel(
-                label: 'Nama Guru *',
-                controller: namaGuruController,
-                hint: 'Masukkan nama guru',
-                enabled: !isLoading,
-              ),
+              isFetchingData
+                  ? const SizedBox()
+                  : _buildGuruDropdown(),
               const SizedBox(height: 16),
 
               Row(
                 children: [
-                  Expanded(
-                    child: _buildTextFieldWithLabel(
-                      label: 'Jam Mulai *',
-                      controller: jamMulaiController,
-                      hint: '08:00',
-                      enabled: !isLoading,
-                    ),
-                  ),
+                  Expanded(child: _buildJamMulaiDropdown()),
                   const SizedBox(width: 16),
-                  Expanded(
-                    child: _buildTextFieldWithLabel(
-                      label: 'Jam Berakhir *',
-                      controller: jamBerakhirController,
-                      hint: '09:30',
-                      enabled: !isLoading,
-                    ),
-                  ),
+                  Expanded(child: _buildJamBerakhirDropdown()),
                 ],
               ),
-              const SizedBox(height: 20),
-
-              _buildColorPickerSection(),
               const SizedBox(height: 28),
 
               _buildActionButtons(),
@@ -423,7 +408,7 @@ class _AddModalState extends State<AddModal> {
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: selectedColor.withOpacity(0.1),
+            color: const Color(0xFF6366F1).withOpacity(0.1),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(
@@ -465,23 +450,24 @@ class _AddModalState extends State<AddModal> {
           decoration: BoxDecoration(
             border: Border.all(color: const Color(0xFFE5E7EB)),
             borderRadius: BorderRadius.circular(12),
-            color: isLoading
-                ? const Color(0xFFF3F4F6)
-                : const Color(0xFFF9FAFB),
+            color: isLoading ? const Color(0xFFF3F4F6) : const Color(0xFFF9FAFB),
           ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
               value: selectedHari,
-              hint: const Text(
-                'Pilih hari',
-                style: TextStyle(color: Color(0xFF9CA3AF)),
-              ),
+              hint: const Text('Pilih hari', style: TextStyle(color: Color(0xFF9CA3AF))),
               isExpanded: true,
               onChanged: isLoading
                   ? null
-                  : (value) => setState(() => selectedHari = value),
+                  : (value) {
+                      setState(() {
+                        selectedHari = value;
+                        selectedJamMulai = null;
+                        selectedJamBerakhir = null;
+                      });
+                    },
               items: hariList.map((hari) {
-                return DropdownMenuItem(
+                return DropdownMenuItem<String>(
                   value: hari,
                   child: Text(
                     hari,
@@ -499,57 +485,12 @@ class _AddModalState extends State<AddModal> {
     );
   }
 
-  Widget _buildTextFieldWithLabel({
-    required String label,
-    required TextEditingController controller,
-    required String hint,
-    bool enabled = true,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF374151),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            border: Border.all(color: const Color(0xFFE5E7EB)),
-            borderRadius: BorderRadius.circular(12),
-            color: enabled ? const Color(0xFFF9FAFB) : const Color(0xFFF3F4F6),
-          ),
-          child: TextField(
-            controller: controller,
-            enabled: enabled,
-            decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: const TextStyle(color: Color(0xFF9CA3AF)),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.all(16),
-            ),
-            style: TextStyle(
-              color: enabled
-                  ? const Color(0xFF374151)
-                  : const Color(0xFF9CA3AF),
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildColorPickerSection() {
+  Widget _buildMapelDropdown() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Pilih Warna',
+          'Mata Pelajaran *',
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
@@ -558,102 +499,205 @@ class _AddModalState extends State<AddModal> {
         ),
         const SizedBox(height: 8),
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
             border: Border.all(color: const Color(0xFFE5E7EB)),
             borderRadius: BorderRadius.circular(12),
-            color: isLoading
+            color: isLoading ? const Color(0xFFF3F4F6) : const Color(0xFFF9FAFB),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: selectedMapel,
+              hint: const Text('Pilih mata pelajaran', style: TextStyle(color: Color(0xFF9CA3AF))),
+              isExpanded: true,
+              onChanged: isLoading
+                  ? null
+                  : (value) => setState(() => selectedMapel = value),
+              items: mapelList.isEmpty
+                  ? [
+                      const DropdownMenuItem<String>(
+                        value: null,
+                        enabled: false,
+                        child: Text(
+                          'Tidak ada mata pelajaran',
+                          style: TextStyle(color: Color(0xFF9CA3AF)),
+                        ),
+                      )
+                    ]
+                  : mapelList.where((mapel) => mapel['nama'] is String).map((mapel) {
+                      return DropdownMenuItem<String>(
+                        value: mapel['nama'] as String,
+                        child: Text(
+                          mapel['nama'] as String,
+                          style: const TextStyle(
+                            color: Color(0xFF374151),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGuruDropdown() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Guru *',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF374151),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+            borderRadius: BorderRadius.circular(12),
+            color: isLoading ? const Color(0xFFF3F4F6) : const Color(0xFFF9FAFB),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: selectedGuru,
+              hint: const Text('Pilih guru', style: TextStyle(color: Color(0xFF9CA3AF))),
+              isExpanded: true,
+              onChanged: isLoading
+                  ? null
+                  : (value) => setState(() => selectedGuru = value),
+              items: guruList.isEmpty
+                  ? [
+                      const DropdownMenuItem<String>(
+                        value: null,
+                        enabled: false,
+                        child: Text(
+                          'Tidak ada guru',
+                          style: TextStyle(color: Color(0xFF9CA3AF)),
+                        ),
+                      )
+                    ]
+                  : guruList.where((guru) => guru['nama'] is String).map((guru) {
+                      return DropdownMenuItem<String>(
+                        value: guru['nama'] as String,
+                        child: Text(
+                          guru['nama'] as String,
+                          style: const TextStyle(
+                            color: Color(0xFF374151),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildJamMulaiDropdown() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Jam Mulai *',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF374151),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+            borderRadius: BorderRadius.circular(12),
+            color: isLoading || selectedHari == null
                 ? const Color(0xFFF3F4F6)
                 : const Color(0xFFF9FAFB),
           ),
-          child: Column(
-            children: [
-              Container(
-                width: double.infinity,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: selectedColor,
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: [
-                    BoxShadow(
-                      color: selectedColor.withOpacity(0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Center(
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: selectedJamMulai,
+              hint: const Text('Pilih jam mulai', style: TextStyle(color: Color(0xFF9CA3AF))),
+              isExpanded: true,
+              onChanged: isLoading || selectedHari == null
+                  ? null
+                  : (value) {
+                      setState(() {
+                        selectedJamMulai = value;
+                        selectedJamBerakhir = null;
+                      });
+                    },
+              items: availableJamMulai.map((jam) {
+                return DropdownMenuItem<String>(
+                  value: jam,
                   child: Text(
-                    'Warna Terpilih',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      shadows: [
-                        Shadow(
-                          color: Colors.black.withOpacity(0.3),
-                          offset: const Offset(0, 1),
-                          blurRadius: 2,
-                        ),
-                      ],
+                    jam,
+                    style: const TextStyle(
+                      color: Color(0xFF374151),
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
-                ),
-              ),
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
-              const SizedBox(height: 16),
-
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 6,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                ),
-                itemCount: colorOptions.length,
-                itemBuilder: (context, index) {
-                  final color = colorOptions[index];
-                  final isSelected = selectedColor == color;
-
-                  return MouseRegion(
-                    cursor: isLoading
-                        ? SystemMouseCursors.forbidden
-                        : SystemMouseCursors.click,
-                    child: GestureDetector(
-                      onTap: isLoading
-                          ? null
-                          : () => setState(() => selectedColor = color),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: color,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: isSelected
-                                ? Colors.white
-                                : Colors.transparent,
-                            width: 3,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: color.withOpacity(0.3),
-                              blurRadius: isSelected ? 8 : 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: isSelected
-                            ? const Icon(
-                                Icons.check,
-                                color: Colors.white,
-                                size: 16,
-                              )
-                            : null,
-                      ),
+  Widget _buildJamBerakhirDropdown() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Jam Berakhir *',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF374151),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+            borderRadius: BorderRadius.circular(12),
+            color: isLoading || selectedJamMulai == null
+                ? const Color(0xFFF3F4F6)
+                : const Color(0xFFF9FAFB),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: selectedJamBerakhir,
+              hint: const Text('Pilih jam berakhir', style: TextStyle(color: Color(0xFF9CA3AF))),
+              isExpanded: true,
+              onChanged: isLoading || selectedJamMulai == null
+                  ? null
+                  : (value) => setState(() => selectedJamBerakhir = value),
+              items: availableJamBerakhir.map((jam) {
+                return DropdownMenuItem<String>(
+                  value: jam,
+                  child: Text(
+                    jam,
+                    style: const TextStyle(
+                      color: Color(0xFF374151),
+                      fontWeight: FontWeight.w500,
                     ),
-                  );
-                },
-              ),
-            ],
+                  ),
+                );
+              }).toList(),
+            ),
           ),
         ),
       ],
@@ -685,7 +729,7 @@ class _AddModalState extends State<AddModal> {
         const SizedBox(width: 12),
         Expanded(
           child: ElevatedButton(
-            onPressed: isLoading ? null : _handleSave,
+            onPressed: isLoading || isFetchingData ? null : _handleSave,
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF4A4877),
               foregroundColor: Colors.white,
