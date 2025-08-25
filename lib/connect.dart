@@ -1,11 +1,12 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class DatabaseConfig {
   static Future<void> initialize() async {
     await Supabase.initialize(
-      url: 'https://ktoodrfmrfy.supabase.co',
-      anonKey: 'eyJhI1NiI5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt0b29kcmZoZm15emJ5YnZqcmZ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ4OTAxNTksImV4cCI6MjA3MDQ2NjE1OX0.FfEeWtPoOTjCK3vkZRHO6MnueKbm9D9ixCv65IIl5PI',
-    );
+    url: dotenv.env['SUPABASE_URL']!,
+    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
+  );
   }
   
   static SupabaseClient get client => Supabase.instance.client;
