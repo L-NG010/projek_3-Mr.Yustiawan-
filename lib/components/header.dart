@@ -160,7 +160,7 @@ class _HeaderState extends State<Header> {
                         _hideProfileMenu();
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (context) => const UserSettingsPage()),
+                          MaterialPageRoute(builder: (context) => const SettingsPage()),
                         ).then((_) {
                           _loadUserProfile();
                         });
