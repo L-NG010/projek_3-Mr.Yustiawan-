@@ -12,7 +12,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _usernameController = TextEditingController();
+  final _emailController = TextEditingController(); // Changed from username to email
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   String _errorMessage = '';
@@ -22,18 +22,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
-    _usernameController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
   Future<void> _register() async {
-    final username = _usernameController.text.trim().toLowerCase();
+    final email = _emailController.text.trim().toLowerCase();
     final password = _passwordController.text.trim();
 
-    if (username.isEmpty || username.length < 3) {
+    if (email.isEmpty || !email.contains('@')) {
       setState(() {
-        _errorMessage = 'Username minimal 3 karakter';
+        _errorMessage = 'Email tidak valid';
       });
       return;
     }
@@ -50,13 +50,11 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final dummyEmail = '$username@gmail.com'; // Changed to consistent domain
-
       final response = await supabase.auth.signUp(
-        email: dummyEmail,
+        email: email,
         password: password,
         data: {
-          'username': username, // Store username in user_metadata
+          'username': email.split('@').first, // Extract username from email
         },
       );
 
@@ -86,12 +84,18 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
-    final username = _usernameController.text.trim().toLowerCase();
+    final email = _emailController.text.trim().toLowerCase();
     final password = _passwordController.text.trim();
 
-    if (username.isEmpty || password.isEmpty) {
+    if (email.isEmpty || !email.contains('@')) {
       setState(() {
-        _errorMessage = 'Username dan password wajib diisi';
+        _errorMessage = 'Email tidak valid';
+      });
+      return;
+    }
+    if (password.isEmpty) {
+      setState(() {
+        _errorMessage = 'Password wajib diisi';
       });
       return;
     }
@@ -102,10 +106,8 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final dummyEmail = '$username@gmail.com'; // Changed to match register domain
-
       final response = await supabase.auth.signInWithPassword(
-        email: dummyEmail,
+        email: email,
         password: password,
       );
 
@@ -179,18 +181,19 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 24),
                     TextFormField(
-                      controller: _usernameController,
+                      controller: _emailController,
+                      keyboardType: TextInputType.emailAddress,
                       decoration: const InputDecoration(
-                        labelText: 'Username',
-                        prefixIcon: Icon(Icons.person),
+                        labelText: 'Email',
+                        prefixIcon: Icon(Icons.email),
                         border: OutlineInputBorder(),
                       ),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return 'Username harus diisi';
+                          return 'Email harus diisi';
                         }
-                        if (value.length < 3) {
-                          return 'Minimal 3 karakter';
+                        if (!value.contains('@')) {
+                          return 'Format email tidak valid';
                         }
                         return null;
                       },

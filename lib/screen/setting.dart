@@ -15,17 +15,16 @@ class UserSettingsPage extends StatefulWidget {
 class _UserSettingsPageState extends State<UserSettingsPage> {
   final supabase = DatabaseConfig.client;
   final _formKey = GlobalKey<FormState>();
-  final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   
   File? _imageFile;
-  Uint8List? _webImageBytes; // For web platform
+  Uint8List? _webImageBytes;
   bool _isLoading = false;
   String? _currentAvatarUrl;
   String? _errorMessage;
   String? _successMessage;
-  String? _profileId; // ID dari tabel profiles (UUID string)
+  String? _profileId;
 
   @override
   void initState() {
@@ -36,11 +35,6 @@ class _UserSettingsPageState extends State<UserSettingsPage> {
   Future<void> _loadUserData() async {
     final user = supabase.auth.currentUser;
     if (user != null) {
-      // Load username from user_metadata
-      final username = user.userMetadata?['username'] ?? user.email?.split('@').first;
-      _usernameController.text = username ?? '';
-      
-      // Load profile data dari tabel profiles berdasarkan u_id
       await _loadProfileData(user.id);
     }
   }
@@ -53,12 +47,12 @@ class _UserSettingsPageState extends State<UserSettingsPage> {
           .eq('u_id', userId)
           .maybeSingle();
       
-      print('Profile data response: $response'); // Debugging
+      print('Profile data response: $response');
       if (response != null) {
         setState(() {
           _profileId = response['id'] as String?;
           _currentAvatarUrl = response['avatar_url'] as String?;
-          print('Loaded profile_id: $_profileId, avatar_url: $_currentAvatarUrl'); // Debugging
+          print('Loaded profile_id: $_profileId, avatar_url: $_currentAvatarUrl');
         });
       } else {
         setState(() {
@@ -69,7 +63,7 @@ class _UserSettingsPageState extends State<UserSettingsPage> {
     } catch (e) {
       print('Error loading profile data: $e');
       setState(() {
-        _currentAvatarUrl = null; // Pastikan state direset jika error
+        _currentAvatarUrl = null;
       });
     }
   }
@@ -81,17 +75,15 @@ class _UserSettingsPageState extends State<UserSettingsPage> {
       
       if (pickedFile != null) {
         if (kIsWeb) {
-          // For web platform
           final bytes = await pickedFile.readAsBytes();
           setState(() {
             _webImageBytes = bytes;
-            _imageFile = null; // Clear mobile file
+            _imageFile = null;
           });
         } else {
-          // For mobile platforms
           setState(() {
             _imageFile = File(pickedFile.path);
-            _webImageBytes = null; // Clear web bytes
+            _webImageBytes = null;
           });
         }
       }
@@ -103,129 +95,115 @@ class _UserSettingsPageState extends State<UserSettingsPage> {
   }
 
   Future<void> _updateProfile() async {
-  if (!_formKey.currentState!.validate()) return;
-  
-  setState(() {
-    _isLoading = true;
-    _errorMessage = null;
-    _successMessage = null;
-  });
-  
-  try {
-    final user = supabase.auth.currentUser;
-    if (user == null) throw Exception('User tidak ditemukan');
+    if (!_formKey.currentState!.validate()) return;
     
-    // 1. Update username di user_metadata Supabase Auth
-    await supabase.auth.updateUser(
-      UserAttributes(
-        data: {'username': _usernameController.text.trim()},
-      ),
-    );
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+      _successMessage = null;
+    });
     
-    // 2. Update password jika diisi
-    if (_passwordController.text.isNotEmpty) {
-      await supabase.auth.updateUser(
-        UserAttributes(password: _passwordController.text.trim()),
-      );
-    }
-    
-    // 3. Upload avatar ke Supabase Storage jika dipilih
-    String? avatarUrl;
-    if (_imageFile != null || _webImageBytes != null) {
-      final user = supabase.auth.currentUser!;
-      final fileExt = 'jpg'; // Default extension
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) throw Exception('User tidak ditemukan');
       
-      // Generate unique filename dengan timestamp untuk mencegah overwrite
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final fileName = '${user.id}_$timestamp.$fileExt';
-      final filePath = fileName;
-      
-      print('Uploading new avatar with filename: $fileName'); // Debugging
-      
-      if (kIsWeb && _webImageBytes != null) {
-        // Upload from web bytes - tidak menggunakan upsert
-        await supabase.storage
-          .from('avatars')
-          .uploadBinary(filePath, _webImageBytes!);
-      } else if (_imageFile != null) {
-        // Upload from mobile file - tidak menggunakan upsert
-        await supabase.storage
-          .from('avatars')
-          .upload(filePath, _imageFile!);
+      // 1. Update password jika diisi
+      bool passwordUpdated = false;
+      if (_passwordController.text.isNotEmpty) {
+        await supabase.auth.updateUser(
+          UserAttributes(password: _passwordController.text.trim()),
+        );
+        passwordUpdated = true;
+        print('Password berhasil diupdate');
       }
       
-      avatarUrl = supabase.storage
-        .from('avatars')
-        .getPublicUrl(filePath);
-      print('Generated new avatar URL: $avatarUrl'); // Debugging
-    }
-    
-    // 4. Update data di tabel profiles dengan avatar_url baru (jika ada)
-    if (_profileId != null) {
-      // Profile exists, update berdasarkan id (primary key)
-      final updateData = <String, dynamic>{
-        'updated_at': DateTime.now().toIso8601String(),
-      };
-      
-      // Hanya update avatar_url jika ada foto baru yang diupload
-      if (avatarUrl != null) {
-        updateData['avatar_url'] = avatarUrl;
-        print('Updating existing profile (id: $_profileId) with new avatar URL: $avatarUrl'); // Debugging
+      // 2. Upload avatar ke Supabase Storage jika dipilih
+      String? avatarUrl;
+      if (_imageFile != null || _webImageBytes != null) {
+        final user = supabase.auth.currentUser!;
+        final fileExt = 'jpg';
+        
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        final fileName = '${user.id}_$timestamp.$fileExt';
+        final filePath = fileName;
+        
+        print('Uploading new avatar with filename: $fileName');
+        
+        if (kIsWeb && _webImageBytes != null) {
+          await supabase.storage
+            .from('avatars')
+            .uploadBinary(filePath, _webImageBytes!);
+        } else if (_imageFile != null) {
+          await supabase.storage
+            .from('avatars')
+            .upload(filePath, _imageFile!);
+        }
+        
+        avatarUrl = supabase.storage
+          .from('avatars')
+          .getPublicUrl(filePath);
+        print('Generated new avatar URL: $avatarUrl');
       }
       
-      // PERBAIKAN: Tambahkan null check untuk _profileId
-      await supabase
-          .from('profiles')
-          .update(updateData)
-          .eq('id', _profileId!); // Gunakan ! untuk assert non-null
-    } else {
-      // Profile doesn't exist, insert new record
-      final insertData = {
-        'u_id': user.id,
-        'avatar_url': avatarUrl,
-        'updated_at': DateTime.now().toIso8601String(),
-      };
+      // 3. Update atau insert data di tabel profiles
+      if (_profileId != null) {
+        final updateData = <String, dynamic>{
+          'updated_at': DateTime.now().toIso8601String(),
+        };
+        
+        if (avatarUrl != null) {
+          updateData['avatar_url'] = avatarUrl;
+          print('Updating existing profile (id: $_profileId) with new avatar URL: $avatarUrl');
+        }
+        
+        await supabase
+            .from('profiles')
+            .update(updateData)
+            .eq('id', _profileId!);
+      } else {
+        final insertData = {
+          'u_id': user.id,
+          'avatar_url': avatarUrl,
+          'updated_at': DateTime.now().toIso8601String(),
+        };
+        
+        print('Creating new profile with u_id: ${user.id}, avatar URL: $avatarUrl');
+        final insertResponse = await supabase
+            .from('profiles')
+            .insert(insertData)
+            .select('id')
+            .single();
+        
+        setState(() {
+          _profileId = insertResponse['id'] as String?;
+        });
+      }
       
-      print('Creating new profile with u_id: ${user.id}, avatar URL: $avatarUrl'); // Debugging
-      final insertResponse = await supabase
-          .from('profiles')
-          .insert(insertData)
-          .select('id')
-          .single();
-      
-      // Update _profileId dengan ID yang baru dibuat
       setState(() {
-        _profileId = insertResponse['id'] as String?;
+        _successMessage = 'Profil berhasil diperbarui!';
+        _passwordController.clear();
+        _confirmPasswordController.clear();
+        _imageFile = null;
+        _webImageBytes = null;
+        
+        if (avatarUrl != null) {
+          _currentAvatarUrl = avatarUrl;
+        }
+      });
+      
+      await _loadProfileData(user.id);
+      
+    } catch (e) {
+      print('Update profile error: $e');
+      setState(() {
+        _errorMessage = 'Gagal memperbarui profil: ${e.toString()}';
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
       });
     }
-    
-    setState(() {
-      _successMessage = 'Profil berhasil diperbarui!';
-      _passwordController.clear();
-      _confirmPasswordController.clear();
-      _imageFile = null;
-      _webImageBytes = null; // Clear web bytes
-      
-      // Update current avatar URL hanya jika ada URL baru
-      if (avatarUrl != null) {
-        _currentAvatarUrl = avatarUrl;
-      }
-    });
-    
-    // Reload profile data untuk memastikan sinkronisasi
-    await _loadProfileData(user.id);
-    
-  } catch (e) {
-    print('Update profile error: $e'); // Debugging
-    setState(() {
-      _errorMessage = 'Gagal memperbarui profil: ${e.toString()}';
-    });
-  } finally {
-    setState(() {
-      _isLoading = false;
-    });
   }
-}
 
   String? _validatePassword(String? value) {
     if (value != null && value.isNotEmpty) {
@@ -328,58 +306,11 @@ class _UserSettingsPageState extends State<UserSettingsPage> {
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                    if (_profileId != null)
-                      Text(
-                        'Profile ID: $_profileId',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey,
-                        ),
-                      ),
                   ],
                 ),
               ),
               
               const SizedBox(height: 30),
-              
-              // Username Field
-              const Text(
-                'Username',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF2C3E50),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _usernameController,
-                decoration: InputDecoration(
-                  hintText: 'Masukkan username baru',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF6A679E),
-                      width: 2,
-                    ),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Username tidak boleh kosong';
-                  }
-                  return null;
-                },
-              ),
-              
-              const SizedBox(height: 20),
               
               // Password Field
               const Text(
@@ -524,9 +455,7 @@ class _UserSettingsPageState extends State<UserSettingsPage> {
   }
 
   Widget _buildProfileImage() {
-    // Priority: newly selected image > current avatar URL > default icon
     if (kIsWeb && _webImageBytes != null) {
-      // Web platform with selected image
       return Image.memory(
         _webImageBytes!,
         fit: BoxFit.cover,
@@ -534,7 +463,6 @@ class _UserSettingsPageState extends State<UserSettingsPage> {
         height: 120,
       );
     } else if (!kIsWeb && _imageFile != null) {
-      // Mobile platform with selected image
       return Image.file(
         _imageFile!,
         fit: BoxFit.cover,
@@ -542,15 +470,12 @@ class _UserSettingsPageState extends State<UserSettingsPage> {
         height: 120,
       );
     } else if (_currentAvatarUrl != null) {
-      // Current avatar from server
-      print('Attempting to load image from: $_currentAvatarUrl'); // Debugging
       return Image.network(
         _currentAvatarUrl!,
         fit: BoxFit.cover,
         width: 120,
         height: 120,
         errorBuilder: (context, error, stackTrace) {
-          print('Image load error: $error'); // Debugging
           return const Icon(
             Icons.person,
             size: 60,
@@ -559,7 +484,6 @@ class _UserSettingsPageState extends State<UserSettingsPage> {
         },
       );
     } else {
-      // Default icon
       return const Icon(
         Icons.person,
         size: 60,
@@ -570,7 +494,6 @@ class _UserSettingsPageState extends State<UserSettingsPage> {
 
   @override
   void dispose() {
-    _usernameController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();

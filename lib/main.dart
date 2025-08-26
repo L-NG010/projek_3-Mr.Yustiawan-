@@ -40,13 +40,31 @@ class _AuthWrapperState extends State<AuthWrapper> {
   @override
   void initState() {
     super.initState();
-    _checkAuthStatus();
+    _initializeAuth();
+  }
+
+  Future<void> _initializeAuth() async {
+    // Check initial auth status
+    await _checkAuthStatus();
+    
     // Listen for auth state changes
     _authSubscription = DatabaseConfig.client.auth.onAuthStateChange.listen((data) {
+      print('Auth state changed: ${data.event}'); // Debug log
+      
       final session = data.session;
-      setState(() {
-        _isLoggedIn = session != null;
-      });
+      final isLoggedIn = session != null;
+      
+      if (mounted) {
+        setState(() {
+          _isLoggedIn = isLoggedIn;
+          _isLoading = false;
+        });
+      }
+      
+      // Debug logs
+      print('Session exists: ${session != null}');
+      print('User email: ${session?.user.email}');
+      print('Is logged in: $isLoggedIn');
     });
   }
 
@@ -57,20 +75,39 @@ class _AuthWrapperState extends State<AuthWrapper> {
   }
 
   Future<void> _checkAuthStatus() async {
-    final session = DatabaseConfig.client.auth.currentSession;
-    setState(() {
-      _isLoggedIn = session != null;
-      _isLoading = false;
-    });
+    try {
+      final session = DatabaseConfig.client.auth.currentSession;
+      print('Initial session check - User: ${session?.user.email}'); // Debug log
+      
+      if (mounted) {
+        setState(() {
+          _isLoggedIn = session != null;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Error checking auth status: $e');
+      if (mounted) {
+        setState(() {
+          _isLoggedIn = false;
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    print('AuthWrapper build - Loading: $_isLoading, LoggedIn: $_isLoggedIn'); // Debug log
+    
     if (_isLoading) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
       );
     }
+    
     return _isLoggedIn ? const MainApp() : const LoginScreen();
   }
 }
