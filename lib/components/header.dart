@@ -17,21 +17,46 @@ class Header extends StatefulWidget implements PreferredSizeWidget {
 class _HeaderState extends State<Header> {
   final supabase = DatabaseConfig.client;
   String? username;
+  String? avatarUrl;
   OverlayEntry? _overlayEntry;
 
   @override
   void initState() {
     super.initState();
-    _loadUsername();
+    _loadUserProfile();
   }
 
-  void _loadUsername() {
+  Future<void> _loadUserProfile() async {
     final user = supabase.auth.currentUser;
-    if (user != null && user.email != null) {
-      final email = user.email!;
-      setState(() {
-        username = email.split('@')[0];
-      });
+    if (user != null) {
+      try {
+        // Load profile dari tabel profiles
+        final response = await supabase
+            .from('profiles')
+            .select('username, avatar_url')
+            .eq('u_id', user.id)
+            .maybeSingle();
+            
+        if (response != null) {
+          setState(() {
+            username = response['username'] ?? user.email?.split('@')[0] ?? 'Pengguna';
+            avatarUrl = response['avatar_url'];
+          });
+        } else {
+          // Fallback jika tidak ada profile
+          setState(() {
+            username = user.userMetadata?['username'] ?? user.email?.split('@')[0] ?? 'Pengguna';
+            avatarUrl = null;
+          });
+        }
+      } catch (e) {
+        // Fallback jika error
+        setState(() {
+          username = user.email?.split('@')[0] ?? 'Pengguna';
+          avatarUrl = null;
+        });
+        print('Error loading user profile: $e');
+      }
     }
   }
 
@@ -59,14 +84,55 @@ class _HeaderState extends State<Header> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    // Profile Info Section
                     Padding(
                       padding: const EdgeInsets.all(12),
-                      child: Text(
-                        username ?? 'Pengguna',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
+                      child: Row(
+                        children: [
+                          // Avatar
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: const Color(0xFF4A4877),
+                                width: 2,
+                              ),
+                            ),
+                            child: ClipOval(
+                              child: avatarUrl != null
+                                  ? Image.network(
+                                      avatarUrl!,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) {
+                                        return const Icon(
+                                          Icons.person,
+                                          size: 24,
+                                          color: Colors.grey,
+                                        );
+                                      },
+                                    )
+                                  : const Icon(
+                                      Icons.person,
+                                      size: 24,
+                                      color: Colors.grey,
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          // Username
+                          Expanded(
+                            child: Text(
+                              username ?? 'Pengguna',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     const Divider(height: 1, thickness: 1),
@@ -76,8 +142,11 @@ class _HeaderState extends State<Header> {
                         _hideProfileMenu();
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (context) => const SettingsPage()),
-                        );
+                          MaterialPageRoute(builder: (context) => const UserSettingsPage()),
+                        ).then((_) {
+                          // Reload profile setelah kembali dari settings
+                          _loadUserProfile();
+                        });
                       },
                       child: const Padding(
                         padding: EdgeInsets.all(12),
@@ -154,13 +223,42 @@ class _HeaderState extends State<Header> {
       ),
       actions: [
         if (user != null) ...[
-          IconButton(
-            icon: const Icon(
-              Icons.account_circle,
-              color: Colors.white,
-              size: 28,
+          // Profile Avatar Button
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: GestureDetector(
+              onTap: () => _showProfileMenu(context),
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white,
+                    width: 2,
+                  ),
+                ),
+                child: ClipOval(
+                  child: avatarUrl != null
+                      ? Image.network(
+                          avatarUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Icon(
+                              Icons.person,
+                              color: Colors.white,
+                              size: 20,
+                            );
+                          },
+                        )
+                      : const Icon(
+                          Icons.person,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                ),
+              ),
             ),
-            onPressed: () => _showProfileMenu(context),
           ),
           const SizedBox(width: 8),
         ],
