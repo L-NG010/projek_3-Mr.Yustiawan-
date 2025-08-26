@@ -17,8 +17,7 @@ class AddModal extends StatefulWidget {
 
 class _AddModalState extends State<AddModal> {
   String? selectedHari;
-  String? selectedMapel;
-  String? selectedGuru;
+  String? selectedMapelId;
   String? selectedJamMulai;
   String? selectedJamBerakhir;
   String? errorMessage;
@@ -26,7 +25,7 @@ class _AddModalState extends State<AddModal> {
   bool isFetchingData = true;
 
   List<Map<String, dynamic>> mapelList = [];
-  List<Map<String, dynamic>> guruList = [];
+  Map<String, dynamic>? selectedMapel;
 
   final List<String> hariList = [
     'Senin',
@@ -38,7 +37,7 @@ class _AddModalState extends State<AddModal> {
   ];
 
   final List<String> mondayTimeSlots = [
-    '07:30', '08:10', '08:50', '09:30', '10:10', '10:40', '11:20', '12:00', '12:40' , '13:20'
+    '07:30', '08:10', '08:50', '09:30', '10:10', '10:40', '11:20', '12:00', '12:40', '13:20'
   ];
 
   final List<String> otherDaysTimeSlots = [
@@ -49,14 +48,14 @@ class _AddModalState extends State<AddModal> {
   @override
   void initState() {
     super.initState();
-    _fetchMapelAndGuru();
+    _fetchMapelData();
   }
 
-  Future<void> _fetchMapelAndGuru() async {
+  Future<void> _fetchMapelData() async {
     setState(() {
       isFetchingData = true;
-      selectedMapel = null; // Reset to prevent invalid selections
-      selectedGuru = null; // Reset to prevent invalid selections
+      selectedMapelId = null;
+      selectedMapel = null;
     });
 
     try {
@@ -67,28 +66,25 @@ class _AddModalState extends State<AddModal> {
         throw Exception('User tidak ditemukan');
       }
 
-      // Fetch mapel filtered by u_id
+      // Fetch mapel dengan data guru yang terkait
       final mapelResponse = await supabase
           .from('mapel')
-          .select('id, nama')
-          .eq('u_id', user.id)
-          .order('nama', ascending: true);
-
-      // Fetch guru filtered by u_id
-      final guruResponse = await supabase
-          .from('guru')
-          .select('id, nama')
+          .select('''
+            id, 
+            nama, 
+            code_warna,
+            guru:guru_id (id, nama)
+          ''')
           .eq('u_id', user.id)
           .order('nama', ascending: true);
 
       setState(() {
         mapelList = List<Map<String, dynamic>>.from(mapelResponse);
-        guruList = List<Map<String, dynamic>>.from(guruResponse);
         isFetchingData = false;
       });
     } catch (e) {
       setState(() {
-        errorMessage = 'Gagal memuat data mata pelajaran atau guru: $e';
+        errorMessage = 'Gagal memuat data mata pelajaran: $e';
         isFetchingData = false;
       });
     }
@@ -127,83 +123,6 @@ class _AddModalState extends State<AddModal> {
     return false;
   }
 
-  Future<String?> _getOrCreateMapel(String namaMapel) async {
-    try {
-      final supabase = DatabaseConfig.client;
-      final user = supabase.auth.currentUser;
-
-      if (user == null) {
-        throw Exception('User tidak ditemukan');
-      }
-
-      final existingMapel = await supabase
-          .from('mapel')
-          .select('id')
-          .eq('nama', namaMapel.trim())
-          .eq('u_id', user.id)
-          .maybeSingle();
-
-      if (existingMapel != null) {
-        return existingMapel['id'] as String;
-      }
-
-      final newMapel = await supabase
-          .from('mapel')
-          .insert({
-            'nama': namaMapel.trim(),
-            'code_warna': '#6366F1', // Default color
-            'u_id': user.id,
-          })
-          .select('id')
-          .single();
-
-      // Refresh mapelList after inserting new mapel
-      await _fetchMapelAndGuru();
-
-      return newMapel['id'] as String;
-    } catch (e) {
-      throw Exception('Gagal membuat/mencari mata pelajaran: $e');
-    }
-  }
-
-  Future<String?> _getOrCreateGuru(String namaGuru) async {
-    try {
-      final supabase = DatabaseConfig.client;
-      final user = supabase.auth.currentUser;
-
-      if (user == null) {
-        throw Exception('User tidak ditemukan');
-      }
-
-      final existingGuru = await supabase
-          .from('guru')
-          .select('id')
-          .eq('nama', namaGuru.trim())
-          .eq('u_id', user.id)
-          .maybeSingle();
-
-      if (existingGuru != null) {
-        return existingGuru['id'] as String;
-      }
-
-      final newGuru = await supabase
-          .from('guru')
-          .insert({
-            'nama': namaGuru.trim(),
-            'u_id': user.id,
-          })
-          .select('id')
-          .single();
-
-      // Refresh guruList after inserting new guru
-      await _fetchMapelAndGuru();
-
-      return newGuru['id'] as String;
-    } catch (e) {
-      throw Exception('Gagal membuat/mencari guru: $e');
-    }
-  }
-
   Future<void> _saveToDatabase() async {
     try {
       final supabase = DatabaseConfig.client;
@@ -213,23 +132,15 @@ class _AddModalState extends State<AddModal> {
         throw Exception('User tidak ditemukan');
       }
 
-      if (selectedMapel == null || selectedGuru == null ||
-          selectedJamMulai == null || selectedJamBerakhir == null ||
-          selectedHari == null) {
+      if (selectedMapelId == null || selectedJamMulai == null || 
+          selectedJamBerakhir == null || selectedHari == null) {
         throw Exception('Data tidak lengkap');
-      }
-
-      final mapelId = await _getOrCreateMapel(selectedMapel!);
-      final guruId = await _getOrCreateGuru(selectedGuru!);
-
-      if (mapelId == null || guruId == null) {
-        throw Exception('Gagal mendapatkan ID mapel atau guru');
       }
 
       final jadwalData = {
         'u_id': user.id,
-        'mapel_id': mapelId,
-        'guru_id': guruId,
+        'mapel_id': selectedMapelId,
+        'guru_id': selectedMapel?['guru']['id'],
         'hari': selectedHari!,
         'jam_awal': '$selectedJamMulai:00',
         'jam_akhir': '$selectedJamBerakhir:00',
@@ -274,17 +185,9 @@ class _AddModalState extends State<AddModal> {
       return;
     }
 
-    if (selectedMapel == null) {
+    if (selectedMapelId == null) {
       setState(() {
         errorMessage = 'Pilih mata pelajaran terlebih dahulu';
-        isLoading = false;
-      });
-      return;
-    }
-
-    if (selectedGuru == null) {
-      setState(() {
-        errorMessage = 'Pilih guru terlebih dahulu';
         isLoading = false;
       });
       return;
@@ -380,9 +283,8 @@ class _AddModalState extends State<AddModal> {
                   : _buildMapelDropdown(),
               const SizedBox(height: 16),
 
-              isFetchingData
-                  ? const SizedBox()
-                  : _buildGuruDropdown(),
+              // Menampilkan nama guru yang sudah terpilih otomatis
+              if (selectedMapel != null) _buildGuruInfo(),
               const SizedBox(height: 16),
 
               Row(
@@ -507,12 +409,22 @@ class _AddModalState extends State<AddModal> {
           ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
-              value: selectedMapel,
+              value: selectedMapelId,
               hint: const Text('Pilih mata pelajaran', style: TextStyle(color: Color(0xFF9CA3AF))),
               isExpanded: true,
               onChanged: isLoading
                   ? null
-                  : (value) => setState(() => selectedMapel = value),
+                  : (value) {
+                      final selected = mapelList.firstWhere(
+                        (mapel) => mapel['id'] == value,
+                        orElse: () => {},
+                      );
+                      
+                      setState(() {
+                        selectedMapelId = value;
+                        selectedMapel = selected.isNotEmpty ? selected : null;
+                      });
+                    },
               items: mapelList.isEmpty
                   ? [
                       const DropdownMenuItem<String>(
@@ -524,9 +436,9 @@ class _AddModalState extends State<AddModal> {
                         ),
                       )
                     ]
-                  : mapelList.where((mapel) => mapel['nama'] is String).map((mapel) {
+                  : mapelList.map((mapel) {
                       return DropdownMenuItem<String>(
-                        value: mapel['nama'] as String,
+                        value: mapel['id'] as String,
                         child: Text(
                           mapel['nama'] as String,
                           style: const TextStyle(
@@ -543,12 +455,14 @@ class _AddModalState extends State<AddModal> {
     );
   }
 
-  Widget _buildGuruDropdown() {
+  Widget _buildGuruInfo() {
+    final guruNama = selectedMapel?['guru']['nama'] as String? ?? 'Tidak diketahui';
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Guru *',
+          'Guru',
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
@@ -557,44 +471,24 @@ class _AddModalState extends State<AddModal> {
         ),
         const SizedBox(height: 8),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
             border: Border.all(color: const Color(0xFFE5E7EB)),
             borderRadius: BorderRadius.circular(12),
-            color: isLoading ? const Color(0xFFF3F4F6) : const Color(0xFFF9FAFB),
+            color: const Color(0xFFF9FAFB),
           ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: selectedGuru,
-              hint: const Text('Pilih guru', style: TextStyle(color: Color(0xFF9CA3AF))),
-              isExpanded: true,
-              onChanged: isLoading
-                  ? null
-                  : (value) => setState(() => selectedGuru = value),
-              items: guruList.isEmpty
-                  ? [
-                      const DropdownMenuItem<String>(
-                        value: null,
-                        enabled: false,
-                        child: Text(
-                          'Tidak ada guru',
-                          style: TextStyle(color: Color(0xFF9CA3AF)),
-                        ),
-                      )
-                    ]
-                  : guruList.where((guru) => guru['nama'] is String).map((guru) {
-                      return DropdownMenuItem<String>(
-                        value: guru['nama'] as String,
-                        child: Text(
-                          guru['nama'] as String,
-                          style: const TextStyle(
-                            color: Color(0xFF374151),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      );
-                    }).toList(),
-            ),
+          child: Row(
+            children: [
+              Icon(Icons.person, color: Colors.grey[600], size: 20),
+              const SizedBox(width: 12),
+              Text(
+                guruNama,
+                style: const TextStyle(
+                  color: Color(0xFF374151),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ),
         ),
       ],

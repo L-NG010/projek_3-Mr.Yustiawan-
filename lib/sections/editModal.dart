@@ -22,16 +22,17 @@ class EditModal extends StatefulWidget {
 
 class _EditModalState extends State<EditModal> {
   final supabase = DatabaseConfig.client;
-  String? selectedGuru;
+  String? selectedMapelId;
   String? selectedJamMulai;
   String? selectedJamBerakhir;
   String? errorMessage;
   bool isLoading = false;
   bool isFetchingData = true;
-  List<Map<String, dynamic>> guruList = [];
+  List<Map<String, dynamic>> mapelList = [];
+  Map<String, dynamic>? selectedMapel;
 
   final List<String> mondayTimeSlots = [
-    '07:30', '08:10', '08:50', '09:30', '10:10', '10:40', '11:20', '12:00', '12:40' , '13:20'
+    '07:30', '08:10', '08:50', '09:30', '10:10', '10:40', '11:20', '12:00', '12:40', '13:20'
   ];
 
   final List<String> otherDaysTimeSlots = [
@@ -52,13 +53,12 @@ class _EditModalState extends State<EditModal> {
   void initState() {
     super.initState();
     final jamParts = widget.pelajaran.jam.split(' - ');
-    selectedGuru = widget.pelajaran.namaGuru;
     selectedJamMulai = jamParts.isNotEmpty ? jamParts[0] : null;
     selectedJamBerakhir = jamParts.length > 1 ? jamParts[1] : null;
-    _fetchGuru();
+    _fetchMapelData();
   }
 
-  Future<void> _fetchGuru() async {
+  Future<void> _fetchMapelData() async {
     setState(() => isFetchingData = true);
 
     try {
@@ -67,22 +67,37 @@ class _EditModalState extends State<EditModal> {
         throw Exception('User tidak ditemukan');
       }
 
-      final guruResponse = await supabase
-          .from('guru')
-          .select('id, nama')
+      // Fetch mapel dengan data guru yang terkait
+      final mapelResponse = await supabase
+          .from('mapel')
+          .select('''
+            id, 
+            nama, 
+            code_warna,
+            guru:guru_id (id, nama)
+          ''')
           .eq('u_id', user.id)
           .order('nama', ascending: true);
 
       setState(() {
-        guruList = List<Map<String, dynamic>>.from(guruResponse);
-        isFetchingData = false;
-        if (!guruList.any((guru) => guru['nama'] == selectedGuru)) {
-          selectedGuru = null;
+        mapelList = List<Map<String, dynamic>>.from(mapelResponse);
+        
+        // Cari mapel yang sesuai dengan pelajaran saat ini
+        final currentMapel = mapelList.firstWhere(
+          (mapel) => mapel['nama'] == widget.pelajaran.nama,
+          orElse: () => {},
+        );
+        
+        if (currentMapel.isNotEmpty) {
+          selectedMapel = currentMapel;
+          selectedMapelId = currentMapel['id'] as String;
         }
+        
+        isFetchingData = false;
       });
     } catch (e) {
       setState(() {
-        errorMessage = 'Gagal memuat data guru: $e';
+        errorMessage = 'Gagal memuat data mata pelajaran: $e';
         isFetchingData = false;
       });
     }
@@ -102,6 +117,7 @@ class _EditModalState extends State<EditModal> {
       final existingStart = schedule['jamMulai'] as String;
       final existingEnd = schedule['jamBerakhir'] as String;
 
+      // Skip jadwal yang sedang diedit
       if (existingStart == originalStart && existingEnd == originalEnd) {
         continue;
       }
@@ -114,40 +130,6 @@ class _EditModalState extends State<EditModal> {
     return false;
   }
 
-  Future<String?> _getOrCreateGuru(String namaGuru) async {
-    try {
-      final user = supabase.auth.currentUser;
-      if (user == null) {
-        throw Exception('User tidak ditemukan');
-      }
-
-      final existingGuru = await supabase
-          .from('guru')
-          .select('id')
-          .eq('nama', namaGuru.trim())
-          .eq('u_id', user.id)
-          .maybeSingle();
-
-      if (existingGuru != null) {
-        return existingGuru['id'] as String;
-      }
-
-      final newGuru = await supabase
-          .from('guru')
-          .insert({
-            'nama': namaGuru.trim(),
-            'u_id': user.id,
-          })
-          .select('id')
-          .single();
-
-      await _fetchGuru();
-      return newGuru['id'] as String;
-    } catch (e) {
-      throw Exception('Gagal membuat/mencari guru: $e');
-    }
-  }
-
   Future<void> _updateToDatabase() async {
     try {
       final user = supabase.auth.currentUser;
@@ -155,14 +137,23 @@ class _EditModalState extends State<EditModal> {
         throw Exception('User tidak ditemukan');
       }
 
-      if (selectedGuru == null || selectedJamMulai == null || selectedJamBerakhir == null) {
+      if (selectedMapelId == null || selectedJamMulai == null || selectedJamBerakhir == null) {
         throw Exception('Data tidak lengkap');
       }
 
-      final guruId = await _getOrCreateGuru(selectedGuru!);
+      // Dapatkan data mapel yang dipilih
+      final selectedMapelData = mapelList.firstWhere(
+        (mapel) => mapel['id'] == selectedMapelId,
+        orElse: () => {},
+      );
+
+      if (selectedMapelData.isEmpty) {
+        throw Exception('Mapel yang dipilih tidak valid');
+      }
 
       final updatedData = {
-        'guru_id': guruId,
+        'mapel_id': selectedMapelId,
+        'guru_id': selectedMapelData['guru']['id'],
         'jam_awal': '$selectedJamMulai:00',
         'jam_akhir': '$selectedJamBerakhir:00',
       };
@@ -200,9 +191,9 @@ class _EditModalState extends State<EditModal> {
       isLoading = true;
     });
 
-    if (selectedGuru == null) {
+    if (selectedMapelId == null) {
       setState(() {
-        errorMessage = 'Pilih guru terlebih dahulu';
+        errorMessage = 'Pilih mata pelajaran terlebih dahulu';
         isLoading = false;
       });
       return;
@@ -292,7 +283,11 @@ class _EditModalState extends State<EditModal> {
 
               isFetchingData
                   ? const Center(child: CircularProgressIndicator())
-                  : _buildGuruDropdown(),
+                  : _buildMapelDropdown(),
+              const SizedBox(height: 16),
+
+              // Info Guru (otomatis menyesuaikan dengan mapel yang dipilih)
+              _buildGuruInfo(),
               const SizedBox(height: 16),
 
               Row(
@@ -342,12 +337,12 @@ class _EditModalState extends State<EditModal> {
     );
   }
 
-  Widget _buildGuruDropdown() {
+  Widget _buildMapelDropdown() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Guru *',
+          'Mata Pelajaran *',
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
@@ -364,28 +359,38 @@ class _EditModalState extends State<EditModal> {
           ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
-              value: selectedGuru,
-              hint: const Text('Pilih guru', style: TextStyle(color: Color(0xFF9CA3AF))),
+              value: selectedMapelId,
+              hint: const Text('Pilih mata pelajaran', style: TextStyle(color: Color(0xFF9CA3AF))),
               isExpanded: true,
               onChanged: isLoading
                   ? null
-                  : (value) => setState(() => selectedGuru = value),
-              items: guruList.isEmpty
+                  : (value) {
+                      final selected = mapelList.firstWhere(
+                        (mapel) => mapel['id'] == value,
+                        orElse: () => {},
+                      );
+                      
+                      setState(() {
+                        selectedMapelId = value;
+                        selectedMapel = selected.isNotEmpty ? selected : null;
+                      });
+                    },
+              items: mapelList.isEmpty
                   ? [
                       const DropdownMenuItem<String>(
                         value: null,
                         enabled: false,
                         child: Text(
-                          'Tidak ada guru',
+                          'Tidak ada mata pelajaran',
                           style: TextStyle(color: Color(0xFF9CA3AF)),
                         ),
                       )
                     ]
-                  : guruList.where((guru) => guru['nama'] is String).map((guru) {
+                  : mapelList.map((mapel) {
                       return DropdownMenuItem<String>(
-                        value: guru['nama'] as String,
+                        value: mapel['id'] as String,
                         child: Text(
-                          guru['nama'] as String,
+                          mapel['nama'] as String,
                           style: const TextStyle(
                             color: Color(0xFF374151),
                             fontWeight: FontWeight.w500,
@@ -393,8 +398,50 @@ class _EditModalState extends State<EditModal> {
                         ),
                       );
                     }).toList(),
-              menuMaxHeight: 200, // Limit height to encourage downward opening
+              menuMaxHeight: 200,
             ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGuruInfo() {
+    final guruNama = selectedMapel != null 
+        ? selectedMapel!['guru']['nama'] as String? ?? 'Tidak diketahui'
+        : widget.pelajaran.namaGuru;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Guru',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF374151),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+            borderRadius: BorderRadius.circular(12),
+            color: const Color(0xFFF9FAFB),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.person, color: Colors.grey[600], size: 20),
+              const SizedBox(width: 12),
+              Text(
+                guruNama,
+                style: const TextStyle(
+                  color: Color(0xFF374151),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -446,7 +493,7 @@ class _EditModalState extends State<EditModal> {
                   ),
                 );
               }).toList(),
-              menuMaxHeight: 200, // Limit height to encourage downward opening
+              menuMaxHeight: 200,
             ),
           ),
         ),
@@ -496,7 +543,7 @@ class _EditModalState extends State<EditModal> {
                   ),
                 );
               }).toList(),
-              menuMaxHeight: 200, // Limit height to encourage downward opening
+              menuMaxHeight: 200,
             ),
           ),
         ),
@@ -512,7 +559,7 @@ class _EditModalState extends State<EditModal> {
             onPressed: isLoading ? null : () => Navigator.pop(context),
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14),
-              side: const BorderSide(color: Color(0xFFE5E7EB)),
+              side: const BorderSide(color: const Color(0xFFE5E7EB)),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),

@@ -355,62 +355,57 @@ class _HeaderState extends State<Header> {
   }
   
   Future<void> _performLogout(BuildContext context) async {
-    if (_isLoggingOut) return;
+  if (_isLoggingOut) return;
+  
+  setState(() {
+    _isLoggingOut = true;
+  });
+  
+  try {
+    print('Starting logout process...');
     
-    setState(() {
-      _isLoggingOut = true;
-    });
+    // Hide menu overlay if still showing
+    _hideProfileMenu();
     
-    try {
-      print('Starting logout process...');
-      print('Current user before logout: ${supabase.auth.currentUser?.email}');
-      
-      // Hide menu overlay if still showing
-      _hideProfileMenu();
-      
-      // Sign out from Supabase
-      await supabase.auth.signOut();
-      
-      print('Supabase signOut completed');
-      print('Current user after logout: ${supabase.auth.currentUser?.email}');
-      
-      // Close dialog if it's still open
-      if (mounted && Navigator.canPop(context)) {
-        Navigator.pop(context);
-      }
-      
-      // Manual navigation as backup if stream doesn't work
-      // This forces navigation back to login screen
-      if (mounted) {
-        Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const LoginScreen()),
-          (route) => false,
-        );
-      }
-      
-    } catch (e) {
-      print('Logout error: $e');
-      
-      if (mounted) {
-        // Close dialog if it's still open
-        if (Navigator.canPop(context)) {
-          Navigator.pop(context);
-        }
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Gagal keluar: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoggingOut = false;
-        });
-      }
+    // Tutup dialog konfirmasi terlebih dahulu
+    if (Navigator.canPop(context)) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+    
+    // Sign out from Supabase
+    await supabase.auth.signOut();
+    
+    print('Supabase signOut completed');
+    
+    // Gunakan timer untuk memastikan dialog sudah tertutup sebelum navigasi
+    await Future.delayed(const Duration(milliseconds: 100));
+    
+    // Manual navigation ke login screen
+    if (mounted) {
+      Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+        (route) => false,
+      );
+    }
+    
+  } catch (e) {
+    print('Logout error: $e');
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal keluar: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  } finally {
+    if (mounted) {
+      setState(() {
+        _isLoggingOut = false;
+      });
     }
   }
+}
 }
