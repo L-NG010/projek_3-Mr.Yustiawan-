@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../connect.dart'; // Import database config
+import '../connect.dart';
 
 class AddModal extends StatefulWidget {
   final Map<String, List<Map<String, dynamic>>> existingSchedules;
@@ -37,12 +37,32 @@ class _AddModalState extends State<AddModal> {
   ];
 
   final List<String> mondayTimeSlots = [
-    '07:30', '08:10', '08:50', '09:30', '10:10', '10:40', '11:20', '12:00', '12:40', '13:20'
+    '07:30',
+    '08:10',
+    '08:50',
+    '09:30',
+    '10:10',
+    '10:40',
+    '11:20',
+    '12:00',
+    '12:40',
+    '13:20',
   ];
 
   final List<String> otherDaysTimeSlots = [
-    '06:30', '07:10', '07:50', '08:30', '09:10', '09:40',
-    '10:20', '11:00', '11:40', '12:20', '13:00', '13:40', '14:20'
+    '06:30',
+    '07:10',
+    '07:50',
+    '08:30',
+    '09:10',
+    '09:40',
+    '10:20',
+    '11:00',
+    '11:40',
+    '12:20',
+    '13:00',
+    '13:40',
+    '14:20',
   ];
 
   @override
@@ -107,20 +127,55 @@ class _AddModalState extends State<AddModal> {
   }
 
   bool _checkScheduleConflict() {
-    if (selectedHari == null || selectedJamMulai == null || selectedJamBerakhir == null) {
-      return false;
+    if (selectedHari == null ||
+        selectedJamMulai == null ||
+        selectedJamBerakhir == null ||
+        selectedMapelId == null) {
+      return false; // Tidak ada konflik jika data belum lengkap
+    }
+
+    final supabase = DatabaseConfig.client;
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      setState(() {
+        errorMessage = 'User tidak ditemukan';
+      });
+      return true;
     }
 
     final existingSchedules = widget.existingSchedules[selectedHari] ?? [];
+
     for (final schedule in existingSchedules) {
-      final existingStart = schedule['jamMulai'] as String;
-      final existingEnd = schedule['jamBerakhir'] as String;
-      if (selectedJamMulai!.compareTo(existingEnd) < 0 &&
-          selectedJamBerakhir!.compareTo(existingStart) > 0) {
+      // Pastikan hanya jadwal milik user saat ini yang diperiksa
+      final existingUserId = schedule['u_id']?.toString();
+      final existingMapelId = schedule['mapel_id']?.toString();
+
+      // Cek 1: Mata pelajaran yang sama di hari yang sama untuk user yang sama
+      if (existingUserId == user.id && existingMapelId == selectedMapelId) {
+        setState(() {
+          errorMessage = 'Mata pelajaran ini sudah ada di hari $selectedHari';
+        });
         return true;
       }
+
+      // Cek 2: Bentrok waktu untuk user yang sama
+      if (existingUserId == user.id) {
+        final existingStart = schedule['jamMulai'] as String?;
+        final existingEnd = schedule['jamBerakhir'] as String?;
+
+        if (existingStart != null && existingEnd != null) {
+          if (selectedJamMulai!.compareTo(existingEnd) < 0 &&
+              selectedJamBerakhir!.compareTo(existingStart) > 0) {
+            setState(() {
+              errorMessage = 'Jadwal bertabrakan dengan waktu yang sudah ada';
+            });
+            return true;
+          }
+        }
+      }
     }
-    return false;
+
+    return false; // Tidak ada konflik
   }
 
   Future<void> _saveToDatabase() async {
@@ -132,8 +187,10 @@ class _AddModalState extends State<AddModal> {
         throw Exception('User tidak ditemukan');
       }
 
-      if (selectedMapelId == null || selectedJamMulai == null || 
-          selectedJamBerakhir == null || selectedHari == null) {
+      if (selectedMapelId == null ||
+          selectedJamMulai == null ||
+          selectedJamBerakhir == null ||
+          selectedHari == null) {
         throw Exception('Data tidak lengkap');
       }
 
@@ -211,7 +268,6 @@ class _AddModalState extends State<AddModal> {
 
     if (_checkScheduleConflict()) {
       setState(() {
-        errorMessage = 'Sudah ada jadwal di hari dan waktu yang sama';
         isLoading = false;
       });
       return;
@@ -247,7 +303,10 @@ class _AddModalState extends State<AddModal> {
             children: [
               if (errorMessage != null) ...[
                 Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 16,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.red[50],
                     borderRadius: BorderRadius.circular(12),
@@ -352,12 +411,17 @@ class _AddModalState extends State<AddModal> {
           decoration: BoxDecoration(
             border: Border.all(color: const Color(0xFFE5E7EB)),
             borderRadius: BorderRadius.circular(12),
-            color: isLoading ? const Color(0xFFF3F4F6) : const Color(0xFFF9FAFB),
+            color: isLoading
+                ? const Color(0xFFF3F4F6)
+                : const Color(0xFFF9FAFB),
           ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
               value: selectedHari,
-              hint: const Text('Pilih hari', style: TextStyle(color: Color(0xFF9CA3AF))),
+              hint: const Text(
+                'Pilih hari',
+                style: TextStyle(color: Color(0xFF9CA3AF)),
+              ),
               isExpanded: true,
               onChanged: isLoading
                   ? null
@@ -405,12 +469,17 @@ class _AddModalState extends State<AddModal> {
           decoration: BoxDecoration(
             border: Border.all(color: const Color(0xFFE5E7EB)),
             borderRadius: BorderRadius.circular(12),
-            color: isLoading ? const Color(0xFFF3F4F6) : const Color(0xFFF9FAFB),
+            color: isLoading
+                ? const Color(0xFFF3F4F6)
+                : const Color(0xFFF9FAFB),
           ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
               value: selectedMapelId,
-              hint: const Text('Pilih mata pelajaran', style: TextStyle(color: Color(0xFF9CA3AF))),
+              hint: const Text(
+                'Pilih mata pelajaran',
+                style: TextStyle(color: Color(0xFF9CA3AF)),
+              ),
               isExpanded: true,
               onChanged: isLoading
                   ? null
@@ -419,7 +488,7 @@ class _AddModalState extends State<AddModal> {
                         (mapel) => mapel['id'] == value,
                         orElse: () => {},
                       );
-                      
+
                       setState(() {
                         selectedMapelId = value;
                         selectedMapel = selected.isNotEmpty ? selected : null;
@@ -434,7 +503,7 @@ class _AddModalState extends State<AddModal> {
                           'Tidak ada mata pelajaran',
                           style: TextStyle(color: Color(0xFF9CA3AF)),
                         ),
-                      )
+                      ),
                     ]
                   : mapelList.map((mapel) {
                       return DropdownMenuItem<String>(
@@ -456,8 +525,9 @@ class _AddModalState extends State<AddModal> {
   }
 
   Widget _buildGuruInfo() {
-    final guruNama = selectedMapel?['guru']['nama'] as String? ?? 'Tidak diketahui';
-    
+    final guruNama =
+        selectedMapel?['guru']['nama'] as String? ?? 'Tidak diketahui';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -520,7 +590,10 @@ class _AddModalState extends State<AddModal> {
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
               value: selectedJamMulai,
-              hint: const Text('Pilih jam mulai', style: TextStyle(color: Color(0xFF9CA3AF))),
+              hint: const Text(
+                'Pilih jam mulai',
+                style: TextStyle(color: Color(0xFF9CA3AF)),
+              ),
               isExpanded: true,
               onChanged: isLoading || selectedHari == null
                   ? null
@@ -574,7 +647,10 @@ class _AddModalState extends State<AddModal> {
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
               value: selectedJamBerakhir,
-              hint: const Text('Pilih jam berakhir', style: TextStyle(color: Color(0xFF9CA3AF))),
+              hint: const Text(
+                'Pilih jam berakhir',
+                style: TextStyle(color: Color(0xFF9CA3AF)),
+              ),
               isExpanded: true,
               onChanged: isLoading || selectedJamMulai == null
                   ? null
