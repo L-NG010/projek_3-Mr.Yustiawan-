@@ -456,6 +456,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildProfileImage() {
+  try {
     if (kIsWeb && _webImageBytes != null) {
       return Image.memory(
         _webImageBytes!,
@@ -470,13 +471,27 @@ class _ProfilePageState extends State<ProfilePage> {
         width: 120,
         height: 120,
       );
-    } else if (_currentAvatarUrl != null) {
+    } else if (_currentAvatarUrl != null && _currentAvatarUrl!.isNotEmpty) {
+      // Tambahkan timestamp untuk menghindari cache
+      final cacheBusterUrl = '$_currentAvatarUrl?t=${DateTime.now().millisecondsSinceEpoch}';
+      
       return Image.network(
-        _currentAvatarUrl!,
+        cacheBusterUrl,
         fit: BoxFit.cover,
         width: 120,
         height: 120,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Center(
+            child: CircularProgressIndicator(
+              value: loadingProgress.expectedTotalBytes != null
+                  ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                  : null,
+            ),
+          );
+        },
         errorBuilder: (context, error, stackTrace) {
+          print('Error loading image: $error');
           return const Icon(
             Icons.person,
             size: 60,
@@ -491,7 +506,15 @@ class _ProfilePageState extends State<ProfilePage> {
         color: Colors.grey,
       );
     }
+  } catch (e) {
+    print('Error in _buildProfileImage: $e');
+    return const Icon(
+      Icons.person,
+      size: 60,
+      color: Colors.grey,
+    );
   }
+}
 
   @override
   void dispose() {

@@ -4,7 +4,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 class DatabaseConfig {
   static Future<void> initialize() async {
     // Load environment variables
-    await dotenv.load(fileName: "../.env");
+    await dotenv.load(fileName: ".env");
     
     final supabaseUrl = dotenv.get('SUPABASE_URL');
     final supabaseAnonKey = dotenv.get('SUPABASE_ANON_KEY');

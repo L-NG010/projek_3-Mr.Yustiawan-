@@ -4,6 +4,8 @@ import '../connect.dart';
 import '../screen/setting.dart';
 import '../screen/auth_screen.dart'; // Import for manual navigation
 
+
+
 class Header extends StatefulWidget implements PreferredSizeWidget {
   const Header({super.key});
   
@@ -51,6 +53,7 @@ class _HeaderState extends State<Header> {
           });
         }
       } catch (e) {
+        if (!mounted) return;
         // Fallback jika error
         setState(() {
           email = user.email;
