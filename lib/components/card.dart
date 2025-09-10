@@ -48,7 +48,7 @@ class _HariCardState extends State<HariCard> with TickerProviderStateMixin {
   void dispose() {
     super.dispose();
   }
-
+  
   Future<void> _handleRefresh() async {
     if (widget.onScheduleChanged != null) {
       setState(() => _isRefreshing = true);

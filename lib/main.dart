@@ -53,7 +53,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
       
       final session = data.session;
       final isLoggedIn = session != null;
-      
+        
       if (mounted) {
         setState(() {
           _isLoggedIn = isLoggedIn;
